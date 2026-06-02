@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 246 247 249;
+  --foreground: 17 21 31;
+}
+
+html, body { height: 100%; }
+
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: padding-box; border: 2px solid transparent; }
+
+@layer components {
+  .badge { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium; }
+  .badge-amber { @apply badge bg-amber-50 text-amber-700 ring-1 ring-amber-200; }
+  .badge-green { @apply badge bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200; }
+  .badge-red { @apply badge bg-rose-50 text-rose-700 ring-1 ring-rose-200; }
+  .badge-blue { @apply badge bg-brand-50 text-brand-700 ring-1 ring-brand-200; }
+  .badge-slate { @apply badge bg-slate-100 text-slate-700 ring-1 ring-slate-200; }
+  .badge-violet { @apply badge bg-violet-50 text-violet-700 ring-1 ring-violet-200; }
+
+  .card { @apply rounded-xl border border-ink-100 bg-white shadow-card; }
+  .card-pad { @apply p-5; }
+
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
+  .btn-secondary { @apply btn bg-white text-ink-800 ring-1 ring-ink-200 hover:bg-ink-50; }
+  .btn-ghost { @apply btn text-ink-700 hover:bg-ink-100; }
+  .btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700; }
+
+  .input { @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm placeholder:text-ink-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100; }
+  .label { @apply mb-1 block text-xs font-medium text-ink-700; }
+
+  .tab-link { @apply inline-flex items-center gap-2 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-ink-500 hover:text-ink-800; }
+  .tab-link-active { @apply border-brand-600 text-ink-900; }
+
+  .kpi { @apply card card-pad flex flex-col gap-1; }
+  .kpi-label { @apply text-xs uppercase tracking-wide text-ink-400; }
+  .kpi-value { @apply text-2xl font-semibold text-ink-900; }
+  .kpi-delta { @apply text-xs font-medium; }
+
+  .table-th { @apply sticky top-0 z-10 border-b border-ink-100 bg-ink-50 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-500; }
+  .table-td { @apply border-b border-ink-100 px-3 py-2 text-sm text-ink-800; }
+  .table-row-hover { @apply hover:bg-brand-50/40; }
+}
