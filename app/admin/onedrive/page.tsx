@@ -18,9 +18,14 @@ interface OneDriveStatus {
 }
 
 export default function OneDriveAdminPage() {
+  // <Suspense> required by Next 14: this page calls useSearchParams() in
+  // Inner, and `next build`'s prerender step refuses to compile such a
+  // page without a Suspense boundary at the page level.
   return (
     <RequireAuth>
-      <Inner />
+      <React.Suspense fallback={null}>
+        <Inner />
+      </React.Suspense>
     </RequireAuth>
   );
 }

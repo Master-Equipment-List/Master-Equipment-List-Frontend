@@ -6,7 +6,26 @@ import { Activity, Loader2 } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 
+/**
+ * Next.js 14 requires any page that calls `useSearchParams()` to be
+ * wrapped in a <Suspense> boundary at the page level — otherwise
+ * `next build`'s static prerender step bails with
+ * "useSearchParams() should be wrapped in a suspense boundary".
+ *
+ * The inner component owns all the auth / form logic; this outer
+ * shell just provides the boundary so prerendering can stream
+ * the static parts first and resolve the search-params during
+ * hydration.
+ */
 export default function LoginPage() {
+  return (
+    <React.Suspense fallback={<LoginSkeleton />}>
+      <LoginPageInner />
+    </React.Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { login, user, loading } = useAuth();
@@ -106,6 +125,25 @@ export default function LoginPage() {
         <p className="mt-3 text-center text-[11px] text-ink-400">
           <Link href="/" className="hover:underline">← back</Link>
         </p>
+      </div>
+    </main>
+  );
+}
+
+function LoginSkeleton() {
+  // Minimal placeholder used while the Suspense boundary is unresolved.
+  // Matches the visual shape of the real form so there's no layout shift.
+  return (
+    <main className="grid min-h-[calc(100vh-3.5rem)] place-items-center px-4">
+      <div className="w-full max-w-md">
+        <div className="card card-pad opacity-60">
+          <div className="h-5 w-24 animate-pulse rounded bg-ink-100" />
+          <div className="mt-5 space-y-3">
+            <div className="h-9 w-full animate-pulse rounded bg-ink-100" />
+            <div className="h-9 w-full animate-pulse rounded bg-ink-100" />
+            <div className="h-9 w-full animate-pulse rounded bg-ink-100" />
+          </div>
+        </div>
       </div>
     </main>
   );

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, FileSpreadsheet, Upload, Check, Loader2, X } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Spinner } from "@/components/ui";
