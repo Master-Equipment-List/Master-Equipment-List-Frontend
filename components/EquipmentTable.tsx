@@ -77,6 +77,7 @@ const FIELD_COLUMNS: ColSpec[] = [
   { id: "remarks",                header: "REMARKS",        accessor: "remarks" },
   { id: "total_dry_weight_mt",    header: "TOT DRY WT",     accessor: "total_dry_weight_mt", numeric: true },
   { id: "total_operating_weight_mt", header: "TOT OPE WT",  accessor: "total_operating_weight_mt", numeric: true },
+  { id: "lifecycle_status",       header: "LIFECYCLE",      accessor: "lifecycle_status",  defaultVisible: true },
 ];
 
 // Legacy export, kept for any external consumers.
@@ -140,6 +141,7 @@ function relativeTime(iso: string | null | undefined): string {
 function sourceTone(src: string): "blue" | "amber" | "green" | "violet" | "slate" {
   switch (src) {
     case "pfd":    return "amber";
+    case "pid":    return "blue";
     case "vendor": return "green";
     case "seed":   return "slate";
     case "manual": return "blue";
@@ -158,9 +160,12 @@ function numCell(v: string | null | undefined) {
 export function EquipmentTable({
   projectId,
   rows,
+  workspace = "topside",
 }: {
   projectId: number;
   rows: Equipment[];
+  /** Forwarded to row-to-detail links so workspace context is preserved. */
+  workspace?: "topside" | "marine";
 }) {
   const { mutate } = useSWRConfig();
   const [globalFilter, setGlobalFilter] = React.useState("");
@@ -289,7 +294,7 @@ export function EquipmentTable({
         accessorKey: "client_tag",
         cell: ({ row }) => (
           <Link
-            href={`/projects/${projectId}/equipment/${row.original.id}`}
+            href={`/projects/${projectId}/${workspace}/equipment/${row.original.id}`}
             className="font-mono text-xs font-semibold text-brand-700 hover:underline"
           >
             {row.original.client_tag}
@@ -324,7 +329,7 @@ export function EquipmentTable({
           const tone = v >= 2 ? "amber" : "slate";
           return (
             <Link
-              href={`/projects/${projectId}/equipment/${row.original.id}`}
+              href={`/projects/${projectId}/${workspace}/equipment/${row.original.id}`}
               className="inline-flex items-center gap-1.5 hover:underline"
               title="Click to view version history"
             >
@@ -380,7 +385,7 @@ export function EquipmentTable({
     ];
 
     return [...fixedHead, ...dynamicCols, ...fixedTail];
-  }, [projectId, deleting, pendingDelete]);
+  }, [projectId, workspace, deleting, pendingDelete]);
 
   const table = useReactTable({
     data: visibleRows,

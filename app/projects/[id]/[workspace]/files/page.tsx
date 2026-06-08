@@ -14,13 +14,19 @@ export default function FilesPage() {
   const id = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
   const { mutate } = useSWRConfig();
 
+  // workspace lives in the URL PATH segment.
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
+
   const [category, setCategory] = React.useState<string>("");
   const [extension, setExtension] = React.useState<string>("");
 
   const q = new URLSearchParams();
+  q.set("workspace", workspace);
   if (category) q.set("category", category);
   if (extension) q.set("extension", extension);
-  const key = `/projects/${id}/files${q.toString() ? `?${q.toString()}` : ""}`;
+  const key = `/projects/${id}/files?${q.toString()}`;
   const { data, error, isLoading } = useSWR<ProjectFile[]>(key, fetcher);
 
   // Per-row delete state: the file pending confirmation, whether the
@@ -60,6 +66,7 @@ export default function FilesPage() {
           <select className="input w-44" value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             <option value="PFD Samples">PFD Samples</option>
+            <option value="P&ID">P&amp;ID</option>
             <option value="Vendor Data">Vendor Data</option>
           </select>
           <select className="input w-32" value={extension} onChange={(e) => setExtension(e.target.value)}>
@@ -137,7 +144,7 @@ export default function FilesPage() {
                     <tr key={f.id} className="table-row-hover">
                       <td className="table-td">
                         <Link
-                          href={`/projects/${id}/files/${f.id}`}
+                          href={`/projects/${id}/${workspace}/files/${f.id}`}
                           className="inline-flex items-center gap-2 text-brand-700 hover:underline"
                         >
                           <FileText className="h-4 w-4" />
@@ -147,7 +154,14 @@ export default function FilesPage() {
                       <td className="table-td font-mono text-[11px] text-ink-500">{f.onedrive_path}</td>
                       <td className="table-td">
                         {f.folder_category ? (
-                          <Badge tone={f.folder_category === "PFD Samples" ? "amber" : f.folder_category === "Vendor Data" ? "green" : "slate"}>
+                          <Badge
+                            tone={
+                              f.folder_category === "PFD Samples" ? "amber"
+                              : f.folder_category === "P&ID"        ? "blue"
+                              : f.folder_category === "Vendor Data" ? "green"
+                              : "slate"
+                            }
+                          >
                             {f.folder_category}
                           </Badge>
                         ) : <span className="text-ink-300">—</span>}

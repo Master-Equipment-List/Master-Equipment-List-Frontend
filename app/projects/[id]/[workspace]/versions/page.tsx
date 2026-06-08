@@ -13,8 +13,12 @@ export default function VersionsOverview() {
   const params = useParams();
   const id = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
 
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
+
   const { data, error, isLoading } = useSWR<Equipment[]>(
-    `/projects/${id}/equipment?limit=5000`,
+    `/projects/${id}/equipment?limit=5000&workspace=${workspace}`,
     fetcher
   );
 
@@ -54,7 +58,7 @@ export default function VersionsOverview() {
                   <tr key={e.id} className="table-row-hover">
                     <td className="table-td font-mono text-xs">
                       <Link
-                        href={`/projects/${id}/equipment/${e.id}`}
+                        href={`/projects/${id}/${workspace}/equipment/${e.id}`}
                         className="text-brand-700 hover:underline"
                       >
                         {e.client_tag}
@@ -80,6 +84,7 @@ export default function VersionsOverview() {
 function sourceTone(src: string): "blue" | "amber" | "green" | "violet" | "slate" {
   switch (src) {
     case "pfd": return "amber";
+    case "pid": return "blue";
     case "vendor": return "green";
     case "seed": return "slate";
     case "manual": return "blue";

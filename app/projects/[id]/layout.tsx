@@ -4,12 +4,28 @@ import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { ChevronLeft } from "lucide-react";
 
-import { WorkspaceTabs } from "@/components/WorkspaceTabs";
-import { Badge, ErrorBox, Spinner } from "@/components/ui";
+import { ErrorBox, Spinner } from "@/components/ui";
 import { fetcher } from "@/lib/api";
 import { RequireAuth } from "@/lib/auth";
 import type { Project } from "@/lib/types";
 
+/**
+ * Project-level layout.
+ *
+ * This layout wraps EVERYTHING under /projects/[id], including the
+ * workspace picker (`/projects/[id]`) and every workspace-scoped page
+ * (`/projects/[id]/[workspace]/...`). It deliberately renders only the
+ * project header + "back to projects" link — the workspace tab bar and
+ * the workspace badge live in `[workspace]/layout.tsx` so they only
+ * appear once the user has actually picked a workspace.
+ *
+ * This separation is what makes back-navigation natural:
+ *   /projects/2/marine/equipment/2553
+ *     → /projects/2/marine/equipment   (workspace layout still wraps this)
+ *     → /projects/2/marine              (workspace layout still wraps this)
+ *     → /projects/2                     (workspace picker, NO tabs)
+ *     → /projects                       (project list)
+ */
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuth>
@@ -25,7 +41,7 @@ function Inner({ children }: { children: React.ReactNode }) {
   const id = Number(projectId);
   const { data: project, error, isLoading } = useSWR<Project>(
     Number.isFinite(id) ? `/projects/${id}` : null,
-    fetcher
+    fetcher,
   );
 
   return (
@@ -39,12 +55,7 @@ function Inner({ children }: { children: React.ReactNode }) {
             {isLoading && <Spinner />}
             {project && (
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold text-ink-900">{project.name}</h2>
-                  <Badge tone={project.project_type === "topside" ? "blue" : "violet"}>
-                    {project.project_type}
-                  </Badge>
-                </div>
+                <h2 className="truncate text-base font-semibold text-ink-900">{project.name}</h2>
                 <div className="mt-0.5 flex items-center gap-3 text-[11px] text-ink-500">
                   {project.code && <span className="font-mono uppercase tracking-wider">{project.code}</span>}
                   {project.client && <span>{project.client}</span>}
@@ -55,7 +66,6 @@ function Inner({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </div>
-        {Number.isFinite(id) && <WorkspaceTabs projectId={id} />}
       </div>
 
       {error && (
@@ -64,7 +74,13 @@ function Inner({ children }: { children: React.ReactNode }) {
         </main>
       )}
 
-      <main className="mx-auto w-full max-w-[1400px] px-6 py-6">{children}</main>
+      {/* No outer <main> here: each route below renders its OWN main with
+          appropriate padding. The picker (app/projects/[id]/page.tsx)
+          and the workspace layout (app/projects/[id]/[workspace]/layout.tsx)
+          each wrap their content in <main>. Putting one here would
+          push the workspace strip (tabs + badge) inwards, breaking the
+          flush-bar look. */}
+      {children}
     </>
   );
 }

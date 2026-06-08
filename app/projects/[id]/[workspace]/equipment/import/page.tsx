@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, FileSpreadsheet, Upload, Check, Loader2, X } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Spinner } from "@/components/ui";
@@ -9,7 +9,7 @@ import { apiBase } from "@/lib/api";
 import { RequireAuth } from "@/lib/auth";
 
 type Mode = "skip_existing" | "update_existing";
-type Status = "new" | "existing" | "invalid";
+type Status = "new" | "existing" | "invalid" | "duplicate_in_file";
 
 interface PreviewRow {
   row_number: number;
@@ -25,6 +25,10 @@ interface PreviewResponse {
   new: number;
   existing: number;
   invalid: number;
+  /** Rows whose client_tag already appeared earlier in THIS spreadsheet.
+   *  The DB-level (project, workspace, client_tag) unique constraint means
+   *  only the first occurrence can land; the rest are skipped. */
+  duplicate_in_file?: number;
   commit: boolean;
   mode: Mode;
   preview: PreviewRow[];
@@ -48,6 +52,11 @@ function Inner() {
   const router = useRouter();
   const params = useParams();
   const projectId = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
+  // workspace lives in the URL PATH (/projects/[id]/[workspace]/equipment/import).
+  // Passed through to the import endpoint so rows land in the right workspace.
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
 
   const [file, setFile] = React.useState<File | null>(null);
   const [sheetName, setSheetName] = React.useState("");
@@ -66,6 +75,7 @@ function Inner() {
     if (sheetName.trim()) qs.set("sheet_name", sheetName.trim());
     qs.set("commit", commit ? "true" : "false");
     qs.set("mode", mode);
+    qs.set("workspace", workspace);
 
     const access =
       typeof window !== "undefined" ? window.localStorage.getItem("mel.access_token") : null;
@@ -136,7 +146,7 @@ function Inner() {
 
   return (
     <main className="space-y-4">
-      <Link className="btn-ghost px-2" href={`/projects/${projectId}/equipment`}>
+      <Link className="btn-ghost px-2" href={`/projects/${projectId}/${workspace}/equipment`}>
         <ArrowLeft className="h-4 w-4" /> Back to equipment
       </Link>
 
@@ -252,12 +262,22 @@ function Inner() {
               </button>
             }
           />
-          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-5">
             <Mini label="Total parsed" value={preview.total_rows} />
             <Mini label="New" value={preview.new} tone="green" />
             <Mini label="Existing" value={preview.existing} tone="amber" />
+            <Mini label="Dup in file" value={preview.duplicate_in_file ?? 0} tone="red" />
             <Mini label="Invalid" value={preview.invalid} tone="red" />
           </div>
+          {(preview.duplicate_in_file ?? 0) > 0 && (
+            <div className="mx-5 mb-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <strong>{preview.duplicate_in_file}</strong> row(s) repeat a
+              <code className="mx-1 font-mono">client_tag</code>
+              that appeared earlier in the same file. Only the FIRST occurrence will be
+              imported. Fix the duplicates in the source spreadsheet if that&apos;s not
+              what you want.
+            </div>
+          )}
 
           <div className="border-t border-ink-100 overflow-auto max-h-[60vh]">
             <table className="min-w-full text-sm">
@@ -286,6 +306,11 @@ function Inner() {
                     <td className="table-td">
                       {r.status === "new" && <Badge tone="green">new</Badge>}
                       {r.status === "existing" && <Badge tone="amber">existing</Badge>}
+                      {r.status === "duplicate_in_file" && (
+                        <span title={r.reason || undefined}>
+                          <Badge tone="amber">duplicate</Badge>
+                        </span>
+                      )}
                       {r.status === "invalid" && (
                         <span title={r.reason || undefined}>
                           <Badge tone="red">invalid</Badge>
@@ -329,7 +354,7 @@ function Inner() {
           <div className="border-t border-ink-100 p-4 text-right">
             <button
               className="btn-primary"
-              onClick={() => router.push(`/projects/${projectId}/equipment`)}
+              onClick={() => router.push(`/projects/${projectId}/${workspace}/equipment`)}
             >
               <Check className="h-4 w-4" /> Go to equipment list
             </button>

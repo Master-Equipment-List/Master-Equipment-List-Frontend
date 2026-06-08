@@ -13,22 +13,30 @@ import {
 
 import { cn } from "@/lib/cn";
 
-export function WorkspaceTabs({ projectId }: { projectId: number }) {
+export function WorkspaceTabs({
+  projectId,
+  workspace,
+}: {
+  projectId: number;
+  workspace: "topside" | "marine";
+}) {
   const pathname = usePathname() || "";
-  const base = `/projects/${projectId}`;
+  const base = `/projects/${projectId}/${workspace}`;
 
   const tabs = [
-    { href: base, label: "Dashboard", icon: BarChart3, exact: true },
+    { href: `${base}`,           label: "Dashboard", icon: BarChart3, exact: true },
     { href: `${base}/equipment`, label: "Equipment", icon: Table },
-    { href: `${base}/files`, label: "Files", icon: FileText },
-    { href: `${base}/onedrive`, label: "OneDrive", icon: Cloud },
-    { href: `${base}/versions`, label: "Versions", icon: Layers },
-    { href: `${base}/team`, label: "Team", icon: Users },
-    { href: `${base}/settings`, label: "Settings", icon: Settings }
+    { href: `${base}/files`,     label: "Files",     icon: FileText },
+    { href: `${base}/onedrive`,  label: "OneDrive",  icon: Cloud },
+    { href: `${base}/versions`,  label: "Versions",  icon: Layers },
+    { href: `${base}/team`,      label: "Team",      icon: Users },
+    { href: `${base}/settings`,  label: "Settings",  icon: Settings },
   ];
 
   function active(href: string, exact?: boolean) {
-    return exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
+    return exact
+      ? pathname === href
+      : pathname === href || pathname.startsWith(href + "/");
   }
 
   return (

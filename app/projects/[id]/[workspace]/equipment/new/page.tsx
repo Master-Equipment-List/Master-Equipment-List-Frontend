@@ -68,6 +68,12 @@ function Inner() {
   const router = useRouter();
   const params = useParams();
   const projectId = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
+  // workspace lives in the URL path. We pass it through the create
+  // request so the new row lands in the right workspace, and we use it
+  // when navigating back to the equipment list.
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
 
   const [form, setForm] = React.useState<FormState>(EMPTY);
   const [submitting, setSubmitting] = React.useState(false);
@@ -91,7 +97,7 @@ function Inner() {
     setError(null);
     try {
       // Convert blank strings to null so backend stores them as NULL.
-      const payload: Record<string, unknown> = { data: {} };
+      const payload: Record<string, unknown> = { data: {}, workspace };
       for (const [k, v] of Object.entries(form)) {
         const s = (v ?? "").trim();
         payload[k] = s === "" ? null : s;
@@ -104,7 +110,7 @@ function Inner() {
         `/projects/${projectId}/equipment`,
         payload,
       );
-      router.replace(`/projects/${projectId}/equipment/${created.id}`);
+      router.replace(`/projects/${projectId}/${workspace}/equipment/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSubmitting(false);
@@ -114,7 +120,7 @@ function Inner() {
   return (
     <main className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link className="btn-ghost px-2" href={`/projects/${projectId}/equipment`}>
+        <Link className="btn-ghost px-2" href={`/projects/${projectId}/${workspace}/equipment`}>
           <ArrowLeft className="h-4 w-4" /> Back to equipment
         </Link>
       </div>
@@ -271,7 +277,7 @@ function Inner() {
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => router.replace(`/projects/${projectId}/equipment`)}
+            onClick={() => router.replace(`/projects/${projectId}/${workspace}/equipment`)}
           >
             <X className="h-4 w-4" /> Cancel
           </button>

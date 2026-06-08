@@ -62,6 +62,7 @@ const FIELD_LABELS: Record<string, string> = {
   total_operating_weight_mt: "Total Operating Weight (MT)",
   pid: "P&ID",
   remarks: "Remarks",
+  lifecycle_status: "Lifecycle Status",
   data: "Extra Data",
 };
 
@@ -69,7 +70,7 @@ const SECTIONS: { title: string; icon: React.ComponentType<{ className?: string 
   {
     title: "Identification",
     icon: Tag,
-    fields: ["rev_no", "old_tag", "vendor", "equipment_type", "module", "design_code", "orientation", "location", "configuration"],
+    fields: ["rev_no", "old_tag", "vendor", "equipment_type", "module", "design_code", "orientation", "location", "configuration", "lifecycle_status"],
   },
   {
     title: "Material & Process",
@@ -102,9 +103,21 @@ const SECTIONS: { title: string; icon: React.ComponentType<{ className?: string 
 // Helpers
 // -----------------------------------------------------------------------------
 
+function lifecycleTone(status: string | null | undefined): "green" | "amber" | "red" | "slate" {
+  if (!status) return "slate";
+  const s = status.toUpperCase();
+  // When multiple flags are set ("REFURBISHED / NEW") the most "alarming"
+  // one wins: SCRAPPED (red) > REFURBISHED (amber) > NEW (green).
+  if (s.includes("SCRAPPED")) return "red";
+  if (s.includes("REFURBISHED")) return "amber";
+  if (s.includes("NEW")) return "green";
+  return "slate";
+}
+
 function sourceTone(src: string | null | undefined): "blue" | "amber" | "green" | "violet" | "slate" | "red" {
   switch (src) {
     case "pfd":    return "amber";
+    case "pid":    return "blue";
     case "vendor": return "green";
     case "seed":   return "slate";
     case "manual": return "blue";
@@ -152,6 +165,11 @@ export default function EquipmentDetailPage() {
   const equipmentId = Number(
     Array.isArray(params?.equipmentId) ? params.equipmentId[0] : params?.equipmentId
   );
+  // workspace is part of the URL path. The parent layout has already
+  // validated it; here we just narrow the type for back-link URLs.
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
 
   const eqUrl = `/projects/${projectId}/equipment/${equipmentId}`;
   const versionsUrl = `/projects/${projectId}/equipment/${equipmentId}/versions`;
@@ -215,7 +233,7 @@ export default function EquipmentDetailPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link className="btn-ghost px-2" href={`/projects/${projectId}/equipment`}>
+        <Link className="btn-ghost px-2" href={`/projects/${projectId}/${workspace}/equipment`}>
           <ArrowLeft className="h-4 w-4" /> Back to equipment
         </Link>
         {equipment && (
@@ -245,6 +263,11 @@ export default function EquipmentDetailPage() {
                   {equipment.equipment_type && (
                     <Badge tone="blue">{equipment.equipment_type}</Badge>
                   )}
+                  {equipment.lifecycle_status && (
+                    <Badge tone={lifecycleTone(equipment.lifecycle_status)}>
+                      {equipment.lifecycle_status}
+                    </Badge>
+                  )}
                 </div>
                 {equipment.description && (
                   <p className="mt-1 text-sm text-ink-700">{equipment.description}</p>
@@ -269,7 +292,7 @@ export default function EquipmentDetailPage() {
                 </div>
                 {sourceFile && (
                   <Link
-                    href={`/projects/${projectId}/files/${sourceFile.id}`}
+                    href={`/projects/${projectId}/${workspace}/files/${sourceFile.id}`}
                     className="mt-1 inline-flex items-center gap-1 text-[11px] text-brand-700 hover:underline"
                   >
                     <FileText className="h-3 w-3" />
@@ -301,6 +324,7 @@ export default function EquipmentDetailPage() {
                 <VersionTimeline
                   versions={versions}
                   projectId={projectId}
+                  workspace={workspace}
                 />
               )}
             </div>
@@ -362,9 +386,11 @@ export default function EquipmentDetailPage() {
 function VersionTimeline({
   versions,
   projectId,
+  workspace,
 }: {
   versions: EquipmentVersion[];
   projectId: number;
+  workspace: "topside" | "marine";
 }) {
   // Sort newest → oldest for the timeline (latest at the top).
   const sorted = React.useMemo(
@@ -423,7 +449,7 @@ function VersionTimeline({
                   </div>
                   {v.source_file_id && (
                     <Link
-                      href={`/projects/${projectId}/files/${v.source_file_id}`}
+                      href={`/projects/${projectId}/${workspace}/files/${v.source_file_id}`}
                       className="text-[11px] text-brand-700 hover:underline"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -559,3 +585,4 @@ function DiffTable({ diff }: { diff: EquipmentDiff }) {
     </div>
   );
 }
+

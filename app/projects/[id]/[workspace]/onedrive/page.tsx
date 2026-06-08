@@ -27,23 +27,46 @@ export default function OneDrivePage() {
   const router = useRouter();
   const id = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
 
+  // workspace lives in the URL PATH segment — drives every fetch / save
+  // below. The parent layout has already validated the value.
+  const wsParam = params?.workspace;
+  const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
+  const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
+
   const [path, setPath] = React.useState<Crumb[]>([{ id: null, name: "Project root" }]);
   const current = path[path.length - 1];
 
+  // Reset breadcrumb whenever the active workspace changes so we don't
+  // try to browse the other workspace's item ids.
+  React.useEffect(() => {
+    setPath([{ id: null, name: "Project root" }]);
+  }, [workspace]);
+
   const { data: project, mutate: mutateProject } = useSWR<Project>(`/projects/${id}`, fetcher);
-  const hasRoot = !!(project && (project.onedrive_root_path || project.onedrive_root_item_id));
+
+  // Resolve the active workspace's root from the project row.
+  const wsRootPath = workspace === "marine"
+    ? project?.marine_onedrive_root_path
+    : (project?.topside_onedrive_root_path || project?.onedrive_root_path);
+  const wsRootItem = workspace === "marine"
+    ? project?.marine_onedrive_root_item_id
+    : (project?.topside_onedrive_root_item_id || project?.onedrive_root_item_id);
+  const wsDriveId = workspace === "marine"
+    ? project?.marine_onedrive_drive_id
+    : (project?.topside_onedrive_drive_id || project?.onedrive_drive_id);
+  const hasRoot = !!(wsRootPath || wsRootItem);
 
   const [editingRoot, setEditingRoot] = React.useState(false);
 
   const browseUrl = hasRoot
     ? (current.id
-        ? `/projects/${id}/onedrive/browse?item_id=${encodeURIComponent(current.id)}`
-        : `/projects/${id}/onedrive/browse`)
+        ? `/projects/${id}/onedrive/browse?item_id=${encodeURIComponent(current.id)}&workspace=${workspace}`
+        : `/projects/${id}/onedrive/browse?workspace=${workspace}`)
     : null;
   const { data: browse, error: browseErr, isLoading } = useSWR<BrowseResponse>(browseUrl, fetcher);
 
   const { data: selection, mutate: mutateSelection } = useSWR<OneDriveSelection[]>(
-    `/projects/${id}/onedrive/selection`,
+    `/projects/${id}/onedrive/selection?workspace=${workspace}`,
     fetcher
   );
 
@@ -93,7 +116,7 @@ export default function OneDrivePage() {
         name: it.name,
         size_bytes: it.size
       }));
-      await api.post(`/projects/${id}/onedrive/selection`, { items, replace: true });
+      await api.post(`/projects/${id}/onedrive/selection?workspace=${workspace}`, { items, replace: true });
       mutateSelection();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -131,11 +154,12 @@ export default function OneDrivePage() {
           name: it.name,
           size_bytes: it.size,
         }));
-        await api.post(`/projects/${id}/onedrive/selection`, { items, replace: true });
+        await api.post(`/projects/${id}/onedrive/selection?workspace=${workspace}`, { items, replace: true });
         await mutateSelection();
       }
-      const qs = forceResync ? "?force=true" : "";
-      const summary = await api.post<SyncSummary>(`/projects/${id}/sync${qs}`);
+      const qs = new URLSearchParams({ workspace });
+      if (forceResync) qs.set("force", "true");
+      const summary = await api.post<SyncSummary>(`/projects/${id}/sync?${qs.toString()}`);
       setSyncResult(summary);
       mutate((key) => typeof key === "string" && key.includes(`/projects/${id}/`));
     } catch (e) {
@@ -157,7 +181,7 @@ export default function OneDrivePage() {
       return next;
     });
     try {
-      const qs = new URLSearchParams({ item_id: item.id });
+      const qs = new URLSearchParams({ item_id: item.id, workspace });
       if (forceResync) qs.set("force", "true");
       const summary = await api.post<SyncSummary>(`/projects/${id}/sync/item?${qs.toString()}`);
       const parts: string[] = [];
@@ -166,7 +190,9 @@ export default function OneDrivePage() {
       if (summary.files_failed) parts.push(`${summary.files_failed} failed`);
       if (summary.equipment_created) parts.push(`${summary.equipment_created} new equipment`);
       if (summary.pfd_updates_applied) parts.push(`${summary.pfd_updates_applied} PFD upd`);
+      if (summary.pid_updates_applied) parts.push(`${summary.pid_updates_applied} P&ID upd`);
       if (summary.vendor_updates_applied) parts.push(`${summary.vendor_updates_applied} vendor upd`);
+      if (summary.pid_locked_skips) parts.push(`${summary.pid_locked_skips} skipped (P&ID-locked)`);
       const msg = parts.length ? parts.join(" · ") : "nothing to do";
       setItemSyncMessages((prev) => ({ ...prev, [item.id]: { kind: "ok", text: msg } }));
       mutate((key) => typeof key === "string" && key.includes(`/projects/${id}/`));
@@ -184,11 +210,17 @@ export default function OneDrivePage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink-900">OneDrive &amp; Sync</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-ink-900">OneDrive &amp; Sync</h2>
+            <Badge tone={workspace === "marine" ? "violet" : "blue"}>
+              {workspace === "marine" ? "Marine" : "Topsides"}
+            </Badge>
+          </div>
           <p className="text-xs text-ink-500">
-            Pick files/folders this project should sync, then sync — per row, or all at once with{" "}
-            <strong>Run sync</strong>. Unchanged files are skipped automatically. Each PDF goes
-            through the vision extractor and the raw per-page JSON is stored on the file&apos;s extraction.
+            Configuring the OneDrive folder and selections for the
+            {" "}<strong>{workspace === "marine" ? "Marine" : "Topsides"}</strong>{" "}
+            workspace only. Pick files/folders, then sync — per row, or all at once with{" "}
+            <strong>Run sync</strong>. The other workspace has its own root and selections.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -226,6 +258,7 @@ export default function OneDrivePage() {
         <ConfigureRootCard
           projectId={id}
           project={project}
+          workspace={workspace}
           forced404={!!browseErr && !editingRoot}
           onSaved={() => { mutateProject(); setEditingRoot(false); }}
           onCancel={hasRoot ? () => setEditingRoot(false) : undefined}
@@ -240,7 +273,7 @@ export default function OneDrivePage() {
             <span>
               Clamped to{" "}
               <code className="font-mono text-[11px] text-ink-700">
-                {project?.onedrive_root_path || project?.onedrive_root_item_id}
+                {wsRootPath || wsRootItem}
               </code>
             </span>
           }
@@ -365,15 +398,16 @@ export default function OneDrivePage() {
                 : "Files whose OneDrive timestamp hadn't changed were skipped."
             }
           />
-          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-7">
             <Mini label="Files synced" value={syncResult.files_synced.toString()} />
             <Mini label="Files skipped" value={(syncResult.files_skipped ?? 0).toString()} />
             <Mini label="Files failed" value={syncResult.files_failed.toString()} />
             <Mini label="New equipment" value={(syncResult.equipment_created ?? 0).toString()} />
             <Mini label="PFD updates" value={syncResult.pfd_updates_applied.toString()} />
+            <Mini label="P&ID updates" value={(syncResult.pid_updates_applied ?? 0).toString()} />
             <Mini label="Vendor updates" value={syncResult.vendor_updates_applied.toString()} />
             {syncResult.errors.length > 0 && (
-              <div className="md:col-span-6">
+              <div className="md:col-span-7">
                 <div className="mb-1 text-xs font-medium text-rose-700">Errors</div>
                 <ul className="space-y-1 text-xs text-rose-700">
                   {syncResult.errors.map((e, i) => (
@@ -407,12 +441,14 @@ function Mini({ label, value }: { label: string; value: string }) {
 function ConfigureRootCard({
   projectId,
   project,
+  workspace,
   onSaved,
   onCancel,
   forced404
 }: {
   projectId: number;
   project: Project | undefined;
+  workspace: "topside" | "marine";
   onSaved: () => void;
   onCancel?: () => void;
   forced404?: boolean;
@@ -420,28 +456,37 @@ function ConfigureRootCard({
   const [mode, setMode] = React.useState<"picker" | "manual">("picker");
   const [pending, setPending] = React.useState<FolderSelection | null>(null);
 
+  // Resolve the workspace's existing root values to pre-fill the form.
+  const wsPath  = workspace === "marine" ? project?.marine_onedrive_root_path    : (project?.topside_onedrive_root_path || project?.onedrive_root_path);
+  const wsItem  = workspace === "marine" ? project?.marine_onedrive_root_item_id : (project?.topside_onedrive_root_item_id || project?.onedrive_root_item_id);
+  const wsDrive = workspace === "marine" ? project?.marine_onedrive_drive_id     : (project?.topside_onedrive_drive_id || project?.onedrive_drive_id);
+
   // Manual-mode state
-  const [rootPath, setRootPath] = React.useState(project?.onedrive_root_path || "");
-  const [rootItem, setRootItem] = React.useState(project?.onedrive_root_item_id || "");
-  const [driveId, setDriveId] = React.useState(project?.onedrive_drive_id || "");
+  const [rootPath, setRootPath] = React.useState(wsPath || "");
+  const [rootItem, setRootItem] = React.useState(wsItem || "");
+  const [driveId, setDriveId] = React.useState(wsDrive || "");
 
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setRootPath(project?.onedrive_root_path || "");
-    setRootItem(project?.onedrive_root_item_id || "");
-    setDriveId(project?.onedrive_drive_id || "");
-  }, [project]);
+    setRootPath(wsPath || "");
+    setRootItem(wsItem || "");
+    setDriveId(wsDrive || "");
+    // Reset every time the workspace OR the project payload changes.
+  }, [project, workspace, wsPath, wsItem, wsDrive]);
 
   async function save(opts: { path?: string | null; item_id?: string | null; drive_id?: string | null }) {
     setSaving(true);
     setError(null);
     try {
+      // Write to the per-workspace columns so the other workspace's root
+      // is left untouched.
+      const prefix = workspace; // "topside" | "marine"
       await api.patch(`/projects/${projectId}`, {
-        onedrive_root_path: opts.path ?? null,
-        onedrive_root_item_id: opts.item_id ?? null,
-        onedrive_drive_id: opts.drive_id ?? null
+        [`${prefix}_onedrive_root_path`]:    opts.path    ?? null,
+        [`${prefix}_onedrive_root_item_id`]: opts.item_id ?? null,
+        [`${prefix}_onedrive_drive_id`]:     opts.drive_id ?? null,
       });
       onSaved();
     } catch (e) {
@@ -489,7 +534,7 @@ function ConfigureRootCard({
             <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
               Microsoft Graph returned 404 for{" "}
               <code className="font-mono">
-                {project?.onedrive_root_path || project?.onedrive_root_item_id}
+                {wsPath || wsItem}
               </code>. Pick a different folder below.
             </div>
           )}
@@ -562,7 +607,7 @@ function ConfigureRootCard({
         <>
           <OneDriveFolderPicker
             onPick={(sel) => setPending(sel)}
-            initialPath={project?.onedrive_root_path || null}
+            initialPath={wsPath || null}
           />
           {onCancel && (
             <div className="flex justify-end">

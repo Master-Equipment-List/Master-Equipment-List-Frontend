@@ -57,23 +57,55 @@ function Page() {
           {data.map((p) => (
             <Link key={p.id} href={`/projects/${p.id}`}>
               <Card className="h-full transition hover:border-brand-300 hover:shadow-md">
-                <div className="flex items-start justify-between px-5 pt-5">
-                  <div className="flex items-center gap-2">
-                    {p.project_type === "topside" ? (
-                      <Wrench className="h-4 w-4 text-brand-600" />
-                    ) : (
-                      <Ship className="h-4 w-4 text-brand-600" />
-                    )}
-                    <Badge tone={p.project_type === "topside" ? "blue" : "violet"}>
-                      {p.project_type}
-                    </Badge>
-                  </div>
-                  {p.code && (
-                    <div className="font-mono text-[11px] uppercase tracking-wide text-ink-400">
-                      {p.code}
+                {(() => {
+                  // A project now potentially hosts BOTH workspaces. Show a
+                  // badge for each one that has an OneDrive root configured
+                  // (i.e. has been set up at least once). The old single
+                  // `project_type` column is irrelevant in the new flow.
+                  const topsideReady = !!(
+                    p.topside_onedrive_root_path ||
+                    p.topside_onedrive_root_item_id ||
+                    // Fall back to legacy single-root for unmigrated projects
+                    p.onedrive_root_path ||
+                    p.onedrive_root_item_id
+                  );
+                  const marineReady = !!(
+                    p.marine_onedrive_root_path || p.marine_onedrive_root_item_id
+                  );
+                  return (
+                    <div className="flex items-start justify-between gap-2 px-5 pt-5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          title={topsideReady ? "Topsides workspace is configured" : "Topsides workspace not configured yet"}
+                          className={
+                            topsideReady
+                              ? "inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700 ring-1 ring-brand-200"
+                              : "inline-flex items-center gap-1 rounded-full bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-400 ring-1 ring-ink-200"
+                          }
+                        >
+                          <Wrench className="h-3 w-3" />
+                          Topsides
+                        </span>
+                        <span
+                          title={marineReady ? "Marine workspace is configured" : "Marine workspace not configured yet"}
+                          className={
+                            marineReady
+                              ? "inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200"
+                              : "inline-flex items-center gap-1 rounded-full bg-ink-50 px-2 py-0.5 text-[11px] font-medium text-ink-400 ring-1 ring-ink-200"
+                          }
+                        >
+                          <Ship className="h-3 w-3" />
+                          Marine
+                        </span>
+                      </div>
+                      {p.code && (
+                        <div className="font-mono text-[11px] uppercase tracking-wide text-ink-400">
+                          {p.code}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 <div className="px-5 pb-5 pt-3">
                   <h3 className="text-sm font-semibold text-ink-900">{p.name}</h3>
@@ -99,10 +131,24 @@ function Page() {
                         <span>{p.location}</span>
                       </div>
                     )}
-                    {p.onedrive_root_path && (
-                      <div className="flex items-center gap-1.5">
+                    {/* Workspace OneDrive roots, one line each when set. Falls back
+                        to the legacy single-root column for unmigrated projects. */}
+                    {(p.topside_onedrive_root_path || (!p.marine_onedrive_root_path && p.onedrive_root_path)) && (
+                      <div className="flex items-center gap-1.5" title="Topsides OneDrive root">
+                        <Wrench className="h-3 w-3 text-brand-500" />
                         <Cloud className="h-3 w-3 text-ink-400" />
-                        <span className="truncate font-mono text-[11px]">{p.onedrive_root_path}</span>
+                        <span className="truncate font-mono text-[11px]">
+                          {p.topside_onedrive_root_path || p.onedrive_root_path}
+                        </span>
+                      </div>
+                    )}
+                    {p.marine_onedrive_root_path && (
+                      <div className="flex items-center gap-1.5" title="Marine OneDrive root">
+                        <Ship className="h-3 w-3 text-violet-500" />
+                        <Cloud className="h-3 w-3 text-ink-400" />
+                        <span className="truncate font-mono text-[11px]">
+                          {p.marine_onedrive_root_path}
+                        </span>
                       </div>
                     )}
                   </div>

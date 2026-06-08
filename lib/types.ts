@@ -22,9 +22,19 @@ export interface Project {
   client: string | null;
   facility: string | null;
   location: string | null;
+  /** Legacy single-root OneDrive (kept for backward compatibility). The
+   *  per-workspace columns below are what the new flow reads. */
   onedrive_drive_id: string | null;
   onedrive_root_item_id: string | null;
   onedrive_root_path: string | null;
+  /** Per-workspace OneDrive roots. Topsides and Marine each point at their
+   *  own folder so the two workspaces sync independently. */
+  topside_onedrive_drive_id?: string | null;
+  topside_onedrive_root_item_id?: string | null;
+  topside_onedrive_root_path?: string | null;
+  marine_onedrive_drive_id?: string | null;
+  marine_onedrive_root_item_id?: string | null;
+  marine_onedrive_root_path?: string | null;
   created_by_id: number | null;
   created_at: string;
   updated_at: string;
@@ -40,6 +50,8 @@ export interface ProjectMember {
 export interface Equipment {
   id: number;
   project_id: number;
+  /** "topside" | "marine" — partitions a project's MEL between workspaces. */
+  workspace?: "topside" | "marine";
   rev_no: string | null;
   old_tag: string | null;
   client_tag: string;
@@ -72,6 +84,11 @@ export interface Equipment {
   remarks: string | null;
   total_dry_weight_mt: string | null;
   total_operating_weight_mt: string | null;
+  /** Marine-MEL lifecycle flag — combination of "NEW", "REFURBISHED",
+   *  "SCRAPPED" (or " / "-joined when more than one is marked).
+   *  Null when none are marked or the source workbook didn't include
+   *  the column set. */
+  lifecycle_status: string | null;
   data: Record<string, unknown>;
   current_version: number;
   last_source: string | null;
@@ -105,6 +122,7 @@ export interface EquipmentDiff {
 export interface ProjectFile {
   id: number;
   project_id: number;
+  workspace?: "topside" | "marine";
   name: string;
   onedrive_path: string;
   folder_category: string | null;
@@ -165,9 +183,13 @@ export interface SyncSummary {
   files_skipped?: number;
   files_failed: number;
   pfd_updates_applied: number;
+  pid_updates_applied?: number;
+  /** Count of PFD/Vendor updates skipped because the equipment row was
+   *  already P&ID-locked (higher source precedence). */
+  pid_locked_skips?: number;
   vendor_updates_applied: number;
-  /** New equipment rows auto-created from PFD/Vendor syncs (tags not previously
-   *  in the project). 0 when only existing rows were updated. */
+  /** New equipment rows auto-created from PFD/Vendor/P&ID syncs (tags not
+   *  previously in the project). 0 when only existing rows were updated. */
   equipment_created?: number;
   errors: Array<{ item: string | null; error: string }>;
 }
