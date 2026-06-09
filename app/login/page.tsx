@@ -1,8 +1,9 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Activity, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 
@@ -58,16 +59,24 @@ function LoginPageInner() {
   return (
     <main className="grid min-h-[calc(100vh-3.5rem)] place-items-center px-4">
       <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-600 text-white">
-            <Activity className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="text-base font-semibold text-ink-900">MEL Studio</div>
-            <div className="text-[11px] uppercase tracking-wider text-ink-400">
-              Master Equipment List
-            </div>
-          </div>
+        {/* Brand mark — Shapoorji Pallonji OIL & GAS logo + " | MEL ".
+            Same layout as TopNav so the user sees a consistent identity
+            from sign-in through the rest of the app. items-end so the
+            divider + "MEL" wordmark line up against the logo's bottom
+            baseline, matching the styled brand row used in the header. */}
+        <div className="mb-6 flex items-end justify-center gap-3 pb-1">
+          <Image
+            src="/images/SP-Oil-Gas.png"
+            alt="Shapoorji Pallonji OIL & GAS"
+            width={200}
+            height={56}
+            priority
+            className="h-12 w-auto object-contain"
+          />
+          <span aria-hidden className="mb-1 h-8 w-px bg-ink-200" />
+          <span className="mb-0.5 text-3xl font-bold leading-none tracking-tight text-ink-900">
+            MEL
+          </span>
         </div>
 
         <div className="card card-pad">
