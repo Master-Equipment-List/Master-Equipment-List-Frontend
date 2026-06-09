@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { Activity, Bell, LayoutGrid, LogOut, Search, Users } from "lucide-react";
 
@@ -22,16 +23,29 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-30 border-b border-ink-100 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center gap-4 px-6">
-        <Link href="/projects" className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-white">
-            <Activity className="h-4 w-4" />
-          </div>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold text-ink-900">MEL Studio</div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-400">
-              Master Equipment List
-            </div>
-          </div>
+        {/* Brand mark: Shapoorji Pallonji OIL & GAS logo + " | MEL ".
+            The image lives at public/images/SP-Oil-Gas.png. The row uses
+            `items-end` so the divider and "MEL" wordmark sit on the
+            bottom edge of the logo — visually aligning with the
+            "Shapoorji Pallonji" baseline rather than floating in the
+            vertical center. The small bottom padding on MEL nudges the
+            font baseline up so descenders don't sit under the logo. */}
+        <Link href="/projects" className="flex h-full items-end gap-3 pb-1.5">
+          <Image
+            src="/images/SP-Oil-Gas.png"
+            alt="Shapoorji Pallonji OIL & GAS"
+            width={180}
+            height={48}
+            priority
+            className="h-10 w-auto object-contain"
+          />
+          <span
+            aria-hidden
+            className="mb-1 h-6 w-px bg-ink-200"
+          />
+          <span className="mb-0.5 text-2xl font-bold leading-none tracking-tight text-ink-900">
+            MEL
+          </span>
         </Link>
 
         <nav className="ml-6 flex items-center gap-1">

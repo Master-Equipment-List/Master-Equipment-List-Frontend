@@ -161,11 +161,17 @@ export function EquipmentTable({
   projectId,
   rows,
   workspace = "topside",
+  onFilteredIdsChange,
 }: {
   projectId: number;
   rows: Equipment[];
   /** Forwarded to row-to-detail links so workspace context is preserved. */
   workspace?: "topside" | "marine";
+  /** Called with the equipment IDs currently passing all active filters
+   *  (search text, "Updated", "Version") whenever the filtered set
+   *  changes. Used by the parent page so the Excel-export button can
+   *  download exactly what the table is showing, not the full dataset. */
+  onFilteredIdsChange?: (ids: number[]) => void;
 }) {
   const { mutate } = useSWRConfig();
   const [globalFilter, setGlobalFilter] = React.useState("");
@@ -408,6 +414,18 @@ export function EquipmentTable({
   const selectedRows = React.useMemo(() => {
     return table.getSelectedRowModel().rows.map((r) => r.original);
   }, [table, rowSelection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Push the IDs of currently-visible rows up to the parent so the
+  // Excel-export button knows what to download. We derive from the
+  // filter inputs (rows + globalFilter + updatedSince + minVer) so the
+  // effect re-runs whenever any of those change — depending on the
+  // table instance directly would skip updates because TanStack mutates
+  // it in place rather than creating a new reference.
+  React.useEffect(() => {
+    if (!onFilteredIdsChange) return;
+    const ids = table.getFilteredRowModel().rows.map((r) => r.original.id);
+    onFilteredIdsChange(ids);
+  }, [rows, globalFilter, updatedSince, minVer, table, onFilteredIdsChange]);
 
   return (
     <div className="space-y-3">

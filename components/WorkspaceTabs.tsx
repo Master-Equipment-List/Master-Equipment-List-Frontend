@@ -6,7 +6,6 @@ import {
   Cloud,
   FileText,
   Layers,
-  Settings,
   Table,
   Users
 } from "lucide-react";
@@ -30,7 +29,9 @@ export function WorkspaceTabs({
     { href: `${base}/onedrive`,  label: "OneDrive",  icon: Cloud },
     { href: `${base}/versions`,  label: "Versions",  icon: Layers },
     { href: `${base}/team`,      label: "Team",      icon: Users },
-    { href: `${base}/settings`,  label: "Settings",  icon: Settings },
+    // "Settings" is project-wide, not workspace-scoped — it lives at
+    // /projects/[id]/settings and is reached via the gear icon in the
+    // project header (rendered by app/projects/[id]/layout.tsx).
   ];
 
   function active(href: string, exact?: boolean) {

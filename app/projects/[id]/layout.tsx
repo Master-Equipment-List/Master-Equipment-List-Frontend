@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import useSWR from "swr";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Settings as SettingsIcon } from "lucide-react";
 
 import { ErrorBox, Spinner } from "@/components/ui";
 import { fetcher } from "@/lib/api";
@@ -36,6 +36,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
 function Inner({ children }: { children: React.ReactNode }) {
   const params = useParams();
+  const pathname = usePathname() || "";
   const idParam = params?.id;
   const projectId = Array.isArray(idParam) ? idParam[0] : idParam;
   const id = Number(projectId);
@@ -43,6 +44,11 @@ function Inner({ children }: { children: React.ReactNode }) {
     Number.isFinite(id) ? `/projects/${id}` : null,
     fetcher,
   );
+
+  // The settings page lives at /projects/[id]/settings (project-wide,
+  // outside any workspace). Hide the gear icon when we're already
+  // ON that page so it doesn't look like a no-op control.
+  const onSettings = pathname === `/projects/${id}/settings`;
 
   return (
     <>
@@ -65,6 +71,19 @@ function Inner({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </div>
+          {/* Project-wide settings link. Visible from the picker AND from
+              inside any workspace, so users always have one obvious
+              entry point to edit name / client / facility / delete. */}
+          {project && !onSettings && (
+            <Link
+              href={`/projects/${id}/settings`}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-600 hover:bg-ink-50"
+              title="Project settings"
+            >
+              <SettingsIcon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Settings</span>
+            </Link>
+          )}
         </div>
       </div>
 
