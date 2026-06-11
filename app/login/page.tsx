@@ -82,7 +82,7 @@ function LoginPageInner() {
         <div className="card card-pad">
           <h1 className="text-base font-semibold text-ink-900">Sign in</h1>
           <p className="mt-1 text-xs text-ink-500">
-            Use the credentials configured in the backend <code>.env</code>.
+            Please enter your login credentials.
           </p>
 
           <form onSubmit={onSubmit} className="mt-5 space-y-3">
@@ -122,13 +122,6 @@ function LoginPageInner() {
               Sign in
             </button>
           </form>
-
-          <p className="mt-4 text-[11px] text-ink-500">
-            Backend:{" "}
-            <code className="text-ink-700">
-              {process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1"}
-            </code>
-          </p>
         </div>
 
         <p className="mt-3 text-center text-[11px] text-ink-400">
