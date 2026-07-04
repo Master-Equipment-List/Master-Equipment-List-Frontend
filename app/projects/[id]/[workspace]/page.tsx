@@ -233,6 +233,7 @@ export default function ProjectDashboard() {
       if (s.pid_updates_applied) parts.push(`${s.pid_updates_applied} P&ID upd`);
       if (s.vendor_updates_applied) parts.push(`${s.vendor_updates_applied} vendor upd`);
       if (s.pid_locked_skips) parts.push(`${s.pid_locked_skips} skipped (P&ID-locked)`);
+      if (s.vendor_low_confidence_skips) parts.push(`${s.vendor_low_confidence_skips} vendor field(s) held for review (low confidence)`);
       setSyncMsg(parts.length ? parts.join(" · ") : "nothing to do");
       mutate((k) => typeof k === "string" && k.includes(`/projects/${id}/`));
     } catch (e) {

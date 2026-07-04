@@ -89,6 +89,19 @@ export interface Equipment {
    *  Null when none are marked or the source workbook didn't include
    *  the column set. */
   lifecycle_status: string | null;
+  /** Extra fields captured from vendor drawings — separate from
+   *  length_m (which holds T/T). Only populated when the drawing
+   *  shows an overall length distinct from the T/T value. */
+  length_overall_m: string | null;
+  /** Minimum Design Metal Temperature in °C. Split from `design_temp`
+   *  so the hot-side value can stay cleanly numeric. */
+  mdmt_c: string | null;
+  /** Hydrostatic test pressure in barg (printed on every ASME VIII
+   *  vessel drawing). */
+  hydrostatic_test_press_barg: string | null;
+  /** Insulation type + thickness as printed (e.g. "40 mm personal
+   *  protection", "75 mm mineral wool + SS cladding"). */
+  insulation: string | null;
   data: Record<string, unknown>;
   current_version: number;
   last_source: string | null;
@@ -187,6 +200,11 @@ export interface SyncSummary {
   /** Count of PFD/Vendor updates skipped because the equipment row was
    *  already P&ID-locked (higher source precedence). */
   pid_locked_skips?: number;
+  /** Count of vendor fields the LLM flagged as "low confidence" — the
+   *  extractor found a value but couldn't tie it to an explicit label
+   *  on the drawing, so it wasn't auto-applied. The reason for each
+   *  skip lives in `extraction.data.vendor.evidence[field]`. */
+  vendor_low_confidence_skips?: number;
   vendor_updates_applied: number;
   /** New equipment rows auto-created from PFD/Vendor/P&ID syncs (tags not
    *  previously in the project). 0 when only existing rows were updated. */

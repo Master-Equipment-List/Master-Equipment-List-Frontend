@@ -78,6 +78,12 @@ const FIELD_COLUMNS: ColSpec[] = [
   { id: "total_dry_weight_mt",    header: "TOT DRY WT",     accessor: "total_dry_weight_mt", numeric: true },
   { id: "total_operating_weight_mt", header: "TOT OPE WT",  accessor: "total_operating_weight_mt", numeric: true },
   { id: "lifecycle_status",       header: "LIFECYCLE",      accessor: "lifecycle_status",  defaultVisible: true },
+  // Extra fields from vendor drawings — hidden by default so the base
+  // table stays compact; users toggle them on via the column picker.
+  { id: "length_overall_m",       header: "L OVERALL (m)",  accessor: "length_overall_m",  numeric: true },
+  { id: "mdmt_c",                 header: "MDMT (oC)",      accessor: "mdmt_c",            numeric: true },
+  { id: "hydrostatic_test_press_barg", header: "HYDRO TEST", accessor: "hydrostatic_test_press_barg", numeric: true },
+  { id: "insulation",             header: "INSULATION",     accessor: "insulation" },
 ];
 
 // Legacy export, kept for any external consumers.

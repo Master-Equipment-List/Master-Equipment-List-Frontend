@@ -193,6 +193,7 @@ export default function OneDrivePage() {
       if (summary.pid_updates_applied) parts.push(`${summary.pid_updates_applied} P&ID upd`);
       if (summary.vendor_updates_applied) parts.push(`${summary.vendor_updates_applied} vendor upd`);
       if (summary.pid_locked_skips) parts.push(`${summary.pid_locked_skips} skipped (P&ID-locked)`);
+      if (summary.vendor_low_confidence_skips) parts.push(`${summary.vendor_low_confidence_skips} vendor field(s) held for review (low confidence)`);
       const msg = parts.length ? parts.join(" · ") : "nothing to do";
       setItemSyncMessages((prev) => ({ ...prev, [item.id]: { kind: "ok", text: msg } }));
       mutate((key) => typeof key === "string" && key.includes(`/projects/${id}/`));
