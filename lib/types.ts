@@ -47,9 +47,15 @@ export interface ProjectMember {
   role: ProjectRole;
 }
 
-/** A sync-proposed change to an EXISTING equipment row, awaiting admin
- *  review before anything is written. New equipment (tags not previously
- *  in the project) still auto-creates and never appears here. */
+/** A sync-proposed change awaiting admin review before anything is
+ *  written. Two kinds:
+ *  - "update": a tag matched an EXISTING row — equipment_id/client_tag/
+ *    description describe that row, being updated in place.
+ *  - "possible_duplicate": a tag matched NOTHING, but its description +
+ *    equipment type fuzzy-matched an existing row (equipment_id/client_tag/
+ *    description below) under a DIFFERENT tag — new_tag is the incoming
+ *    tag; the admin decides whether it's genuinely new or the same
+ *    equipment under a corrected tag. */
 export interface PendingChange {
   id: number;
   equipment_id: number;
@@ -59,12 +65,15 @@ export interface PendingChange {
   source: string;
   source_file_id: number | null;
   source_file_name: string | null;
+  kind: "update" | "possible_duplicate";
+  /** Only set for kind="possible_duplicate". */
+  new_tag: string | null;
   /** {"field_name": {"old": ..., "new": ...}, ...} */
   proposed_fields: Record<string, { old: unknown; new: unknown }>;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "confirmed_new" | "confirmed_duplicate";
   /** Who triggered the sync that queued (or last replaced) this proposal. */
   created_by_name: string | null;
-  /** Who approved or rejected it — null while still "pending". */
+  /** Who resolved it — null while still "pending". */
   resolved_by_name: string | null;
   resolved_at: string | null;
   created_at: string;

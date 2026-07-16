@@ -2,7 +2,7 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
-import { Check, Loader2, ShieldAlert, X } from "lucide-react";
+import { AlertTriangle, Check, GitMerge, Loader2, ShieldAlert, X } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Spinner } from "@/components/ui";
 import { Pagination, usePagination, type Paged } from "@/components/Pagination";
@@ -11,13 +11,12 @@ import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import type { PendingChange, ProjectMember } from "@/lib/types";
 
-type StatusFilter = "pending" | "approved" | "rejected" | "all";
+type StatusFilter = "pending" | "rejected" | "all";
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "pending", label: "Pending review" },
-  { value: "approved", label: "Approved" },
   { value: "rejected", label: "Rejected" },
-  { value: "all", label: "All" },
+  { value: "all", label: "All (incl. resolved)" },
 ];
 
 function sourceTone(src: string): "blue" | "amber" | "green" | "violet" | "slate" {
@@ -30,12 +29,22 @@ function sourceTone(src: string): "blue" | "amber" | "green" | "violet" | "slate
   }
 }
 
-function statusTone(status: PendingChange["status"]): "amber" | "green" | "red" | "slate" {
+function statusTone(status: PendingChange["status"]): "amber" | "green" | "red" | "blue" | "slate" {
   switch (status) {
-    case "pending":  return "amber";
-    case "approved": return "green";
-    case "rejected": return "red";
-    default:         return "slate";
+    case "pending":             return "amber";
+    case "approved":            return "green";
+    case "confirmed_new":       return "green";
+    case "confirmed_duplicate": return "blue";
+    case "rejected":            return "red";
+    default:                    return "slate";
+  }
+}
+
+function statusLabel(status: PendingChange["status"]): string {
+  switch (status) {
+    case "confirmed_new":       return "confirmed new";
+    case "confirmed_duplicate": return "confirmed duplicate";
+    default:                    return status;
   }
 }
 
@@ -125,11 +134,40 @@ export default function PendingChangesPage() {
   }
 
   async function reject(pc: PendingChange) {
-    if (!confirm(`Discard the proposed change for ${pc.client_tag}? The equipment row won't be touched.`)) return;
+    const label = pc.kind === "possible_duplicate" ? pc.new_tag : pc.client_tag;
+    if (!confirm(`Discard the proposed change for ${label}? The equipment row won't be touched.`)) return;
     setBusyId(pc.id);
     setActionError(null);
     try {
       await api.post(`/projects/${id}/equipment/pending/${pc.id}/reject`, {});
+      mutate((k) => typeof k === "string" && k.includes(`/projects/${id}/`));
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmNew(pc: PendingChange) {
+    if (!confirm(`Create ${pc.new_tag} as a brand-new equipment row? This will NOT touch ${pc.client_tag}.`)) return;
+    setBusyId(pc.id);
+    setActionError(null);
+    try {
+      await api.post(`/projects/${id}/equipment/pending/${pc.id}/confirm-new`, {});
+      mutate((k) => typeof k === "string" && k.includes(`/projects/${id}/`));
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmDuplicate(pc: PendingChange) {
+    setBusyId(pc.id);
+    setActionError(null);
+    try {
+      const fields = Array.from(acceptedFor(pc));
+      await api.post(`/projects/${id}/equipment/pending/${pc.id}/confirm-duplicate`, { accepted_fields: fields });
       mutate((k) => typeof k === "string" && k.includes(`/projects/${id}/`));
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -144,9 +182,12 @@ export default function PendingChangesPage() {
         <h2 className="text-lg font-semibold text-ink-900">Pending Changes</h2>
         <p className="text-sm text-ink-500">
           Sync-proposed updates to EXISTING equipment rows wait here for review —
-          pick which fields to accept per row, then approve. New equipment rows
-          (a tag the sync hasn&apos;t seen before) aren&apos;t gated and are
-          created immediately, so they never show up in this queue.
+          pick which fields to accept per row, then approve. A tag the sync
+          hasn&apos;t seen before normally auto-creates immediately — unless its
+          description and equipment type closely match an existing row under a
+          different tag, in which case it shows up here as a{" "}
+          <span className="font-medium text-amber-700">possible duplicate</span>{" "}
+          instead, for you to confirm as new or merge.
         </p>
       </header>
 
@@ -196,19 +237,28 @@ export default function PendingChangesPage() {
             const selected = acceptedFor(pc);
             const busy = busyId === pc.id;
             const isPending = pc.status === "pending";
+            const isDuplicate = pc.kind === "possible_duplicate";
             return (
-              <Card key={pc.id}>
+              <Card key={pc.id} className={isDuplicate ? "ring-1 ring-amber-200" : undefined}>
                 <CardHeader
-                  title={pc.client_tag}
+                  title={isDuplicate ? pc.new_tag || "(unknown tag)" : pc.client_tag}
                   subtitle={
                     <div className="space-y-0.5">
-                      {pc.description && <div>{pc.description}</div>}
+                      {isDuplicate ? (
+                        <div className="text-ink-600">
+                          Possibly the same as{" "}
+                          <span className="font-mono font-medium text-ink-800">{pc.client_tag}</span>
+                          {pc.description && <> — {pc.description}</>}
+                        </div>
+                      ) : (
+                        pc.description && <div>{pc.description}</div>
+                      )}
                       <div className="text-[11px] text-ink-400">
                         Queued by {pc.created_by_name || "—"}
                         {!isPending && pc.resolved_by_name && (
                           <>
                             {" · "}
-                            {pc.status === "approved" ? "Approved" : "Rejected"} by{" "}
+                            {statusLabel(pc.status)} by{" "}
                             {pc.resolved_by_name}
                             {pc.resolved_at && ` on ${new Date(pc.resolved_at).toLocaleString()}`}
                           </>
@@ -218,7 +268,12 @@ export default function PendingChangesPage() {
                   }
                   action={
                     <div className="flex items-center gap-2">
-                      <Badge tone={statusTone(pc.status)}>{pc.status}</Badge>
+                      {isDuplicate && (
+                        <Badge tone="amber">
+                          <AlertTriangle className="h-3 w-3" /> possible duplicate
+                        </Badge>
+                      )}
+                      <Badge tone={statusTone(pc.status)}>{statusLabel(pc.status)}</Badge>
                       <Badge tone={sourceTone(pc.source)}>{pc.source}</Badge>
                       {pc.source_file_name && (
                         <span
@@ -237,8 +292,12 @@ export default function PendingChangesPage() {
                       <tr className="text-left text-ink-500">
                         {isPending && <th className="w-8 pb-2" />}
                         <th className="pb-2 pr-4">FIELD</th>
-                        <th className="pb-2 pr-4">CURRENT (OLD)</th>
-                        <th className="pb-2">PROPOSED (NEW)</th>
+                        <th className="pb-2 pr-4">
+                          {isDuplicate ? `${pc.client_tag} (CURRENT)` : "CURRENT (OLD)"}
+                        </th>
+                        <th className="pb-2">
+                          {isDuplicate ? `INCOMING FOR ${pc.new_tag}` : "PROPOSED (NEW)"}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -271,8 +330,14 @@ export default function PendingChangesPage() {
                       })}
                     </tbody>
                   </table>
+                  {isDuplicate && isPending && (
+                    <p className="mt-2 text-[11px] text-ink-400">
+                      Checkboxes only matter if you merge — confirming as new equipment
+                      uses every value on the right regardless of what&apos;s checked.
+                    </p>
+                  )}
                 </div>
-                {isProjectAdmin && isPending && (
+                {isProjectAdmin && isPending && !isDuplicate && (
                   <div className="flex items-center justify-end gap-2 border-t border-ink-100 p-3">
                     <button
                       type="button"
@@ -291,6 +356,39 @@ export default function PendingChangesPage() {
                     >
                       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                       Approve{selected.size ? ` (${selected.size} field${selected.size === 1 ? "" : "s"})` : " (keeps all existing values)"}
+                    </button>
+                  </div>
+                )}
+                {isProjectAdmin && isPending && isDuplicate && (
+                  <div className="flex items-center justify-end gap-2 border-t border-ink-100 p-3">
+                    <button
+                      type="button"
+                      className="btn-ghost text-xs"
+                      onClick={() => reject(pc)}
+                      disabled={busy}
+                    >
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => confirmDuplicate(pc)}
+                      disabled={busy}
+                      title={`Apply the checked fields to ${pc.client_tag} instead of creating a new row`}
+                    >
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
+                      Merge into {pc.client_tag}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary text-xs"
+                      onClick={() => confirmNew(pc)}
+                      disabled={busy}
+                      title={`Create ${pc.new_tag} as its own equipment row`}
+                    >
+                      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                      Confirm as new equipment
                     </button>
                   </div>
                 )}

@@ -5,6 +5,7 @@ import useSWR from "swr";
 import {
   BarChart3,
   Cloud,
+  Copy,
   FileText,
   Layers,
   ListChecks,
@@ -34,10 +35,28 @@ export function WorkspaceTabs({
   );
   const pendingCount = pending?.total ?? 0;
 
+  // Unlike Pending's cheap SQL COUNT, the duplicate scan is an O(n²)
+  // comparison over every equipment row in the workspace — the "total"
+  // still requires computing the FULL pair list server-side even with
+  // limit=1 (only the response payload shrinks, not the work). This
+  // component persists across page navigations within a workspace (it's
+  // rendered by the shared layout, not remounted per-page), so with
+  // revalidateOnFocus off this only actually re-scans once per workspace
+  // visit rather than on every click — acceptable, but if projects grow
+  // much larger than the ~500-700 rows seen so far, revisit this (e.g. a
+  // short server-side cache) rather than tightening it further here.
+  const { data: duplicates } = useSWR<Paged<unknown>>(
+    `/projects/${projectId}/equipment/duplicate-audit?workspace=${workspace}&limit=1`,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
+  const duplicatesCount = duplicates?.total ?? 0;
+
   const tabs = [
     { href: `${base}`,           label: "Dashboard", icon: BarChart3, exact: true },
     { href: `${base}/equipment`, label: "Equipment", icon: Table },
     { href: `${base}/pending`,   label: "Pending",   icon: ListChecks, badge: pendingCount },
+    { href: `${base}/duplicates`, label: "Duplicates", icon: Copy, badge: duplicatesCount },
     { href: `${base}/files`,     label: "Files",     icon: FileText },
     { href: `${base}/onedrive`,  label: "OneDrive",  icon: Cloud },
     { href: `${base}/versions`,  label: "Versions",  icon: Layers },
