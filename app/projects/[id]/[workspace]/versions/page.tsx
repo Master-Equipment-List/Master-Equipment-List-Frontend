@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { Layers } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Spinner } from "@/components/ui";
+import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { fetcher } from "@/lib/api";
 import type { Equipment } from "@/lib/types";
 
@@ -17,15 +18,15 @@ export default function VersionsOverview() {
   const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
   const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
 
-  const { data, error, isLoading } = useSWR<Equipment[]>(
-    `/projects/${id}/equipment?limit=5000&workspace=${workspace}`,
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
+
+  // Sorted by version count server-side now — no client-side sort/slice
+  // needed, the API returns exactly the page we ask for in that order.
+  const { data: page, error, isLoading } = useSWR<Paged<Equipment>>(
+    `/projects/${id}/equipment?workspace=${workspace}&sort_by=current_version&sort_dir=desc&${qs}`,
     fetcher
   );
-
-  const sorted = React.useMemo(() => {
-    if (!data) return [];
-    return [...data].sort((a, b) => (b.current_version || 0) - (a.current_version || 0));
-  }, [data]);
+  const data = page?.items;
 
   return (
     <div className="space-y-4">
@@ -41,7 +42,7 @@ export default function VersionsOverview() {
 
       {data && (
         <Card>
-          <CardHeader title={`${data.length} equipment items`} action={<div className="text-xs text-ink-500"><Layers className="mr-1 inline h-3 w-3" /> sorted by version count</div>} />
+          <CardHeader title={`${page?.total ?? data.length} equipment items`} action={<div className="text-xs text-ink-500"><Layers className="mr-1 inline h-3 w-3" /> sorted by version count</div>} />
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -54,7 +55,7 @@ export default function VersionsOverview() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.slice(0, 200).map((e) => (
+                {data.map((e) => (
                   <tr key={e.id} className="table-row-hover">
                     <td className="table-td font-mono text-xs">
                       <Link
@@ -75,6 +76,13 @@ export default function VersionsOverview() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={page?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onLimitChange={setLimit}
+          />
         </Card>
       )}
     </div>

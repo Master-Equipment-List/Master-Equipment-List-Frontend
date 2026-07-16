@@ -15,8 +15,6 @@ import {
   Wrench,
 } from "lucide-react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -31,6 +29,7 @@ import {
 } from "recharts";
 
 import { Badge, Card, CardHeader, Spinner } from "@/components/ui";
+import type { Paged } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import type {
   Equipment,
@@ -63,15 +62,22 @@ export default function ProjectDashboard() {
 
   const { data: project } = useSWR<Project>(`/projects/${id}`, fetcher);
 
+  // These three all fetch with a large limit and unwrap .items — this
+  // dashboard needs full-project aggregates (totals, KPI counts), not one
+  // display page, unlike the paginated list pages that hit the same
+  // endpoints for on-screen tables.
   const equipmentKey = `/projects/${id}/equipment?limit=5000&workspace=${workspace}`;
-  const filesKey     = `/projects/${id}/files?workspace=${workspace}`;
-  const membersKey   = `/projects/${id}/members`;
+  const filesKey     = `/projects/${id}/files?limit=5000&workspace=${workspace}`;
+  const membersKey   = `/projects/${id}/members?limit=1000`;
   const selectionKey = `/projects/${id}/onedrive/selection?workspace=${workspace}`;
 
-  const { data: equipment } = useSWR<Equipment[]>(equipmentKey, fetcher);
-  const { data: files } = useSWR<ProjectFile[]>(filesKey, fetcher);
-  const { data: members } = useSWR<ProjectMember[]>(membersKey, fetcher);
+  const { data: equipmentPage } = useSWR<Paged<Equipment>>(equipmentKey, fetcher);
+  const { data: filesPage } = useSWR<Paged<ProjectFile>>(filesKey, fetcher);
+  const { data: membersPage } = useSWR<Paged<ProjectMember>>(membersKey, fetcher);
   const { data: selection } = useSWR<OneDriveSelection[]>(selectionKey, fetcher);
+  const equipment = equipmentPage?.items;
+  const files = filesPage?.items;
+  const members = membersPage?.items;
 
   // ---------- Derived metrics ----------
   const totals = React.useMemo(() => {
@@ -468,10 +474,10 @@ export default function ProjectDashboard() {
             action={
               <span className="hidden items-center gap-3 text-[11px] text-ink-500 md:inline-flex">
                 <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-brand-500" /> equipment updates
+                  <span className="h-2 w-2 rounded-sm bg-brand-500" /> equipment updates
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" /> files synced
+                  <span className="h-2 w-2 rounded-sm bg-emerald-500" /> files synced
                 </span>
               </span>
             }
@@ -1033,18 +1039,15 @@ function ActivityChart({
   return (
     <div style={{ height: 220 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
-          <defs>
-            <linearGradient id="gradEq" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="gradFile" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor="#10b981" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+        <BarChart
+          data={data}
+          margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+          barGap={2}
+          barCategoryGap="28%"
+        >
+          {/* Solid hairline gridlines — never dashed; horizontal only so
+              bars stay the loudest thing on the chart. */}
+          <CartesianGrid stroke="#f1f5f9" vertical={false} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 10, fill: "#94a3b8" }}
@@ -1060,32 +1063,44 @@ function ActivityChart({
             allowDecimals={false}
             width={32}
           />
-          <Tooltip
-            contentStyle={{
-              borderRadius: 8,
-              border: "1px solid #e2e8f0",
-              fontSize: 12,
-            }}
-            labelStyle={{ color: "#475569", fontWeight: 600 }}
-          />
-          <Area
-            type="monotone"
-            dataKey="equipment"
-            name="Equipment updates"
-            stroke="#2563eb"
-            strokeWidth={2}
-            fill="url(#gradEq)"
-          />
-          <Area
-            type="monotone"
-            dataKey="files"
-            name="Files synced"
-            stroke="#10b981"
-            strokeWidth={2}
-            fill="url(#gradFile)"
-          />
-        </AreaChart>
+          <Tooltip content={<ActivityTooltip />} cursor={{ fill: "#f8fafc" }} />
+          {/* Bars: capped thickness, rounded data-end at top, square at the
+              baseline — daily counts are discrete, so bars (not a smoothed
+              curve) are the honest read for mostly-zero, occasionally-1 data. */}
+          <Bar dataKey="equipment" name="Equipment updates" fill="#2563eb" radius={[3, 3, 0, 0]} maxBarSize={14} />
+          <Bar dataKey="files" name="Files synced" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={14} />
+        </BarChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Values lead (bold, high-contrast) and series names follow (muted ink) —
+// the legend's hierarchy inverted, since here the reader already has the
+// series and wants the number. Line-key swatches (a short stroke of the
+// series color) rather than filled boxes, per the bar/area legend mirror.
+function ActivityTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { dataKey: string; name: string; value: number; color: string }[];
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-xs shadow-md">
+      <div className="mb-1 font-semibold text-ink-700">{label}</div>
+      <div className="space-y-0.5">
+        {payload.map((p) => (
+          <div key={p.dataKey} className="flex items-center gap-2">
+            <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
+            <span className="tabular-nums font-semibold text-ink-900">{p.value}</span>
+            <span className="text-ink-500">{p.name}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

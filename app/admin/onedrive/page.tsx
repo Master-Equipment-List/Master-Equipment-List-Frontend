@@ -15,6 +15,11 @@ interface OneDriveStatus {
   expires_at?: string | null;
   scope?: string | null;
   has_refresh_token?: boolean;
+  // Result of an actual token-refresh attempt against Microsoft, not just
+  // a comparison against the stored expiry timestamp. False only when the
+  // refresh token itself is dead and re-authentication is really needed.
+  token_valid?: boolean;
+  error?: string | null;
 }
 
 export default function OneDriveAdminPage() {
@@ -83,7 +88,12 @@ function Inner() {
 
   const isConnected = connStatus?.connected;
   const expiresAt = connStatus?.expires_at ? new Date(connStatus.expires_at) : null;
-  const expired = expiresAt ? expiresAt.getTime() < Date.now() : false;
+  // token_valid reflects an actual refresh attempt against Microsoft, not
+  // just whether the last-fetched access token's timestamp has passed —
+  // access tokens are short-lived by design and silently renew on next
+  // use, so a stale expires_at alone doesn't mean the connection is broken.
+  const tokenValid = connStatus?.token_valid ?? true;
+  const needsReauth = isConnected && !tokenValid;
 
   return (
     <main className="mx-auto w-full max-w-[900px] px-6 py-8 space-y-4">
@@ -117,8 +127,8 @@ function Inner() {
           <CardHeader
             title="Connection status"
             action={
-              <Badge tone={isConnected ? (expired ? "amber" : "green") : "slate"}>
-                {isConnected ? (expired ? "expired" : "connected") : "not connected"}
+              <Badge tone={isConnected ? (needsReauth ? "red" : "green") : "slate"}>
+                {isConnected ? (needsReauth ? "needs re-auth" : "connected") : "not connected"}
               </Badge>
             }
           />
@@ -128,14 +138,13 @@ function Inner() {
                 <Row label="Tenant" value={connStatus.tenant_id || "—"} mono />
                 <Row label="Account" value={connStatus.account_email || "—"} />
                 <Row
-                  label="Expires at"
-                  value={
-                    expiresAt
-                      ? `${expiresAt.toLocaleString()} ${expired ? "(expired)" : ""}`
-                      : "—"
-                  }
+                  label="Access token expires at"
+                  value={expiresAt ? expiresAt.toLocaleString() : "—"}
                 />
                 <Row label="Refresh token" value={connStatus.has_refresh_token ? "stored" : "missing"} />
+                {needsReauth && connStatus?.error && (
+                  <Row label="Last refresh error" value={connStatus.error} small />
+                )}
                 <Row label="Scope" value={connStatus.scope || "—"} mono small />
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                   <button

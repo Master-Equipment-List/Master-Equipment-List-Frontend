@@ -5,6 +5,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { Trash2, UserPlus } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Field, Spinner } from "@/components/ui";
+import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import type { ProjectMember, ProjectRole, User } from "@/lib/types";
 
@@ -13,11 +14,15 @@ export default function TeamPage() {
   const id = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
   const { mutate } = useSWRConfig();
 
-  const { data: members, error: mErr } = useSWR<ProjectMember[]>(
-    `/projects/${id}/members`,
-    fetcher
-  );
-  const { data: users } = useSWR<User[]>("/users", fetcher);
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
+  const membersKey = `/projects/${id}/members?${qs}`;
+  const { data: membersPage, error: mErr } = useSWR<Paged<ProjectMember>>(membersKey, fetcher);
+  const members = membersPage?.items;
+
+  // Full user list (for the "add member" picker) — a plain dropdown needs
+  // every choice, not one page at a time.
+  const { data: usersPage } = useSWR<Paged<User>>("/users?limit=1000", fetcher);
+  const users = usersPage?.items;
 
   const [userId, setUserId] = React.useState<number | "">("");
   const [role, setRole] = React.useState<ProjectRole>("viewer");
@@ -31,7 +36,7 @@ export default function TeamPage() {
     setError(null);
     try {
       await api.post(`/projects/${id}/members`, { user_id: userId, role });
-      mutate(`/projects/${id}/members`);
+      mutate((k) => typeof k === "string" && k.startsWith(`/projects/${id}/members`));
       setUserId("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -44,7 +49,7 @@ export default function TeamPage() {
     if (!confirm("Remove this member?")) return;
     try {
       await api.delete(`/projects/${id}/members/${memberUserId}`);
-      mutate(`/projects/${id}/members`);
+      mutate((k) => typeof k === "string" && k.startsWith(`/projects/${id}/members`));
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }
@@ -66,7 +71,7 @@ export default function TeamPage() {
 
       {members && (
         <Card>
-          <CardHeader title={`${members.length} members`} />
+          <CardHeader title={`${membersPage?.total ?? members.length} members`} />
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -111,6 +116,13 @@ export default function TeamPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={membersPage?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onLimitChange={setLimit}
+          />
         </Card>
       )}
 

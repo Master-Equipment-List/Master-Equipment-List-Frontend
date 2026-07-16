@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
 import {
@@ -9,6 +10,7 @@ import {
   File as FileIcon,
   Folder,
   Home,
+  ListChecks,
   Loader2,
   Play,
   RefreshCcw,
@@ -17,6 +19,7 @@ import {
 
 import { Badge, Card, CardHeader, ErrorBox, Field, Spinner } from "@/components/ui";
 import { OneDriveFolderPicker, type FolderSelection } from "@/components/OneDriveFolderPicker";
+import { Pagination, usePagination } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import type { BrowseResponse, DriveItem, OneDriveSelection, Project, SyncSummary } from "@/lib/types";
 
@@ -35,12 +38,14 @@ export default function OneDrivePage() {
 
   const [path, setPath] = React.useState<Crumb[]>([{ id: null, name: "Project root" }]);
   const current = path[path.length - 1];
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
 
   // Reset breadcrumb whenever the active workspace changes so we don't
   // try to browse the other workspace's item ids.
   React.useEffect(() => {
     setPath([{ id: null, name: "Project root" }]);
-  }, [workspace]);
+    setOffset(0);
+  }, [workspace, setOffset]);
 
   const { data: project, mutate: mutateProject } = useSWR<Project>(`/projects/${id}`, fetcher);
 
@@ -60,8 +65,8 @@ export default function OneDrivePage() {
 
   const browseUrl = hasRoot
     ? (current.id
-        ? `/projects/${id}/onedrive/browse?item_id=${encodeURIComponent(current.id)}&workspace=${workspace}`
-        : `/projects/${id}/onedrive/browse?workspace=${workspace}`)
+        ? `/projects/${id}/onedrive/browse?item_id=${encodeURIComponent(current.id)}&workspace=${workspace}&${qs}`
+        : `/projects/${id}/onedrive/browse?workspace=${workspace}&${qs}`)
     : null;
   const { data: browse, error: browseErr, isLoading } = useSWR<BrowseResponse>(browseUrl, fetcher);
 
@@ -96,10 +101,12 @@ export default function OneDrivePage() {
   function drillInto(item: DriveItem) {
     if (item.type !== "folder") return;
     setPath((p) => [...p, { id: item.id, name: item.name }]);
+    setOffset(0);
   }
 
   function goTo(index: number) {
     setPath((p) => p.slice(0, index + 1));
+    setOffset(0);
   }
 
   const [saving, setSaving] = React.useState(false);
@@ -128,7 +135,11 @@ export default function OneDrivePage() {
   const [syncing, setSyncing] = React.useState(false);
   const [syncResult, setSyncResult] = React.useState<SyncSummary | null>(null);
   const [syncError, setSyncError] = React.useState<string | null>(null);
-  const [forceResync, setForceResync] = React.useState(false);
+  // Manual syncs from this page are an explicit "do it now" action, so
+  // default to force re-processing even when OneDrive's modified timestamp
+  // hasn't changed. Users who want the skip-unchanged-files optimization
+  // back (e.g. re-running a big folder sync) can uncheck it.
+  const [forceResync, setForceResync] = React.useState(true);
   const { mutate } = useSWRConfig();
 
   // Has the in-memory selection diverged from what's saved on the server?
@@ -189,9 +200,11 @@ export default function OneDrivePage() {
       if (summary.files_skipped) parts.push(`${summary.files_skipped} skipped`);
       if (summary.files_failed) parts.push(`${summary.files_failed} failed`);
       if (summary.equipment_created) parts.push(`${summary.equipment_created} new equipment`);
-      if (summary.pfd_updates_applied) parts.push(`${summary.pfd_updates_applied} PFD upd`);
-      if (summary.pid_updates_applied) parts.push(`${summary.pid_updates_applied} P&ID upd`);
-      if (summary.vendor_updates_applied) parts.push(`${summary.vendor_updates_applied} vendor upd`);
+      if (summary.pfd_updates_applied) parts.push(`${summary.pfd_updates_applied} PFD proposal(s)`);
+      if (summary.pid_updates_applied) parts.push(`${summary.pid_updates_applied} P&ID proposal(s)`);
+      if (summary.vendor_updates_applied) parts.push(`${summary.vendor_updates_applied} vendor proposal(s)`);
+      if (summary.equipment_list_updates_applied) parts.push(`${summary.equipment_list_updates_applied} equipment list proposal(s)`);
+      if (summary.pending_changes_queued) parts.push(`${summary.pending_changes_queued} awaiting admin review`);
       if (summary.pid_locked_skips) parts.push(`${summary.pid_locked_skips} skipped (P&ID-locked)`);
       if (summary.vendor_low_confidence_skips) parts.push(`${summary.vendor_low_confidence_skips} vendor field(s) held for review (low confidence)`);
       const msg = parts.length ? parts.join(" · ") : "nothing to do";
@@ -381,6 +394,13 @@ export default function OneDrivePage() {
                 })}
               </tbody>
             </table>
+            <Pagination
+              total={browse.total}
+              limit={limit}
+              offset={offset}
+              onOffsetChange={setOffset}
+              onLimitChange={setLimit}
+            />
           </div>
         )}
       </Card>
@@ -398,15 +418,27 @@ export default function OneDrivePage() {
                 ? "Force re-sync — every selected item was re-processed."
                 : "Files whose OneDrive timestamp hadn't changed were skipped."
             }
+            action={
+              !!syncResult.pending_changes_queued && (
+                <Link
+                  href={`/projects/${id}/${workspace}/pending`}
+                  className="btn-secondary text-xs"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  Review {syncResult.pending_changes_queued} pending
+                </Link>
+              )
+            }
           />
-          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-7">
+          <div className="grid grid-cols-2 gap-4 p-5 md:grid-cols-8">
             <Mini label="Files synced" value={syncResult.files_synced.toString()} />
             <Mini label="Files skipped" value={(syncResult.files_skipped ?? 0).toString()} />
             <Mini label="Files failed" value={syncResult.files_failed.toString()} />
             <Mini label="New equipment" value={(syncResult.equipment_created ?? 0).toString()} />
-            <Mini label="PFD updates" value={syncResult.pfd_updates_applied.toString()} />
-            <Mini label="P&ID updates" value={(syncResult.pid_updates_applied ?? 0).toString()} />
-            <Mini label="Vendor updates" value={syncResult.vendor_updates_applied.toString()} />
+            <Mini label="PFD proposals" value={syncResult.pfd_updates_applied.toString()} />
+            <Mini label="P&ID proposals" value={(syncResult.pid_updates_applied ?? 0).toString()} />
+            <Mini label="Vendor proposals" value={syncResult.vendor_updates_applied.toString()} />
+            <Mini label="Equipment List proposals" value={(syncResult.equipment_list_updates_applied ?? 0).toString()} />
             {syncResult.errors.length > 0 && (
               <div className="md:col-span-7">
                 <div className="mb-1 text-xs font-medium text-rose-700">Errors</div>

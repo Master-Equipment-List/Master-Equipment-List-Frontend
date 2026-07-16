@@ -6,6 +6,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { FileText, Filter, Loader2, Trash2, X } from "lucide-react";
 
 import { Badge, Card, ConfirmModal, ErrorBox, Spinner } from "@/components/ui";
+import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import type { ProjectFile } from "@/lib/types";
 
@@ -21,13 +22,19 @@ export default function FilesPage() {
 
   const [category, setCategory] = React.useState<string>("");
   const [extension, setExtension] = React.useState<string>("");
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
+
+  // Any filter change invalidates the current offset — start back at page 1.
+  function changeCategory(v: string) { setCategory(v); setOffset(0); }
+  function changeExtension(v: string) { setExtension(v); setOffset(0); }
 
   const q = new URLSearchParams();
   q.set("workspace", workspace);
   if (category) q.set("category", category);
   if (extension) q.set("extension", extension);
-  const key = `/projects/${id}/files?${q.toString()}`;
-  const { data, error, isLoading } = useSWR<ProjectFile[]>(key, fetcher);
+  const key = `/projects/${id}/files?${q.toString()}&${qs}`;
+  const { data: filesPage, error, isLoading } = useSWR<Paged<ProjectFile>>(key, fetcher);
+  const data = filesPage?.items;
 
   // Per-row delete state: the file pending confirmation, whether the
   // delete request is in flight, and the last error so it stays visible
@@ -121,13 +128,13 @@ export default function FilesPage() {
         </div>
         <div className="flex items-center gap-2 text-sm">
           <Filter className="h-4 w-4 text-ink-400" />
-          <select className="input w-44" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select className="input w-44" value={category} onChange={(e) => changeCategory(e.target.value)}>
             <option value="">All categories</option>
             <option value="PFD Samples">PFD Samples</option>
             <option value="P&ID">P&amp;ID</option>
             <option value="Vendor Data">Vendor Data</option>
           </select>
-          <select className="input w-32" value={extension} onChange={(e) => setExtension(e.target.value)}>
+          <select className="input w-32" value={extension} onChange={(e) => changeExtension(e.target.value)}>
             <option value="">All types</option>
             <option value=".pdf">PDF</option>
             <option value=".xlsx">Excel</option>
@@ -357,6 +364,13 @@ export default function FilesPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={filesPage?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onLimitChange={setLimit}
+          />
         </Card>
       )}
     </div>

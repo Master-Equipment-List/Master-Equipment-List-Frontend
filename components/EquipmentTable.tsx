@@ -5,7 +5,6 @@ import { useSWRConfig } from "swr";
 import {
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
@@ -20,7 +19,6 @@ import {
   Check,
   History,
   Loader2,
-  Search,
   SlidersHorizontal,
   Trash2,
   X,
@@ -62,10 +60,10 @@ const FIELD_COLUMNS: ColSpec[] = [
   { id: "design_press",           header: "DES PRESS",      accessor: "design_press",     defaultVisible: true },
   { id: "design_temp",            header: "DES TEMP",       accessor: "design_temp",      defaultVisible: true },
   { id: "design_flow",            header: "DES FLOW",       accessor: "design_flow" },
-  { id: "pump_capacity",          header: "CAPACITY",       accessor: "pump_capacity" },
+  { id: "pump_capacity",          header: "CAPACITY",       accessor: "pump_capacity",    defaultVisible: true },
   { id: "heat_exchanger_duty_kw", header: "DUTY kW",        accessor: "heat_exchanger_duty_kw", numeric: true },
   { id: "liquid_fill",            header: "LIQ FILL",       accessor: "liquid_fill" },
-  { id: "absorbed_power_kw",      header: "ABS kW",         accessor: "absorbed_power_kw", numeric: true },
+  { id: "absorbed_power_kw",      header: "ABS kW",         accessor: "absorbed_power_kw", numeric: true, defaultVisible: true },
   { id: "rated_power_kw",         header: "RATED kW",       accessor: "rated_power_kw",    numeric: true },
   { id: "length_m",               header: "L T/T (m)",      accessor: "length_m",          numeric: true, defaultVisible: true },
   { id: "width_id_m",             header: "W / I.D (m)",    accessor: "width_id_m",        numeric: true, defaultVisible: true },
@@ -74,7 +72,7 @@ const FIELD_COLUMNS: ColSpec[] = [
   { id: "operating_weight_mt",    header: "OPE WT (MT)",    accessor: "operating_weight_mt", numeric: true, defaultVisible: true },
   { id: "hydrotest_weight_mt",    header: "HYDRO WT (MT)",  accessor: "hydrotest_weight_mt", numeric: true },
   { id: "pid",                    header: "P&ID",           accessor: "pid" },
-  { id: "remarks",                header: "REMARKS",        accessor: "remarks" },
+  { id: "remarks",                header: "REMARKS",        accessor: "remarks",          defaultVisible: true },
   { id: "total_dry_weight_mt",    header: "TOT DRY WT",     accessor: "total_dry_weight_mt", numeric: true },
   { id: "total_operating_weight_mt", header: "TOT OPE WT",  accessor: "total_operating_weight_mt", numeric: true },
   { id: "lifecycle_status",       header: "LIFECYCLE",      accessor: "lifecycle_status",  defaultVisible: true },
@@ -92,42 +90,32 @@ export const COLUMNS = [
   ...FIELD_COLUMNS.map((c) => ({ key: c.accessor, label: c.header })),
 ];
 
-// ---- Filter options --------------------------------------------------------
+// Keys that are either already rendered as a FIXED column (client_tag,
+// current_version, updated_at, actions) or are bookkeeping/internal —
+// never worth surfacing as a generic data column even if a new backend
+// field happens to reuse a similar shape.
+const NON_DATA_KEYS = new Set<string>([
+  "id", "project_id", "workspace", "client_tag", "data",
+  "current_version", "last_source", "last_source_file_id",
+  "last_updated_by_id", "created_by_id", "created_at", "updated_at",
+]);
 
-type UpdatedSince = "any" | "24h" | "7d" | "30d";
-
-const UPDATED_LABEL: Record<UpdatedSince, string> = {
-  any: "Any time",
-  "24h": "Last 24 hours",
-  "7d":  "Last 7 days",
-  "30d": "Last 30 days",
-};
-
-function withinWindow(updatedAt: string, win: UpdatedSince): boolean {
-  if (win === "any") return true;
-  const ts = new Date(updatedAt).getTime();
-  if (Number.isNaN(ts)) return true;
-  const now = Date.now();
-  const ms = win === "24h" ? 24 * 3600e3 : win === "7d" ? 7 * 86400e3 : 30 * 86400e3;
-  return now - ts <= ms;
+function prettifyKey(key: string): string {
+  return key.replace(/_/g, " ").toUpperCase();
 }
 
-/**
- * Build the list of version-threshold options from the actual data.
- * Returns [{value:1,label:"Any version"}, {value:2,label:"v2+ (changed…)"},
- *          {value:3,label:"v3+"}, …, {value:max,label:"vMAX+"}].
- * If every row is still on v1 (untouched), only "Any version" is offered.
- */
-function buildVersionOptions(rows: Equipment[]): { value: number; label: string }[] {
-  const max = rows.reduce((m, r) => Math.max(m, r.current_version ?? 1), 1);
-  const opts = [{ value: 1, label: "Any version" }];
-  for (let v = 2; v <= max; v++) {
-    opts.push({
-      value: v,
-      label: v === 2 ? "v2+ (changed at least once)" : `v${v}+`,
-    });
-  }
-  return opts;
+// ---- Display helpers --------------------------------------------------------
+// NOTE: search / "updated since" / "min version" filtering used to live in
+// this component as client-side filters over a fully-fetched dataset. Now
+// that the parent page (equipment/page.tsx) drives server-side pagination,
+// those filters are sent to the API instead — this component only ever
+// sees one already-filtered page of rows, so it stays purely a display
+// component (columns, selection, bulk-delete, in-page sort).
+
+function within24h(updatedAt: string): boolean {
+  const ts = new Date(updatedAt).getTime();
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts <= 24 * 3600e3;
 }
 
 function relativeTime(iso: string | null | undefined): string {
@@ -167,25 +155,17 @@ export function EquipmentTable({
   projectId,
   rows,
   workspace = "topside",
-  onFilteredIdsChange,
 }: {
   projectId: number;
+  /** Already filtered + paginated by the parent — one page's worth. */
   rows: Equipment[];
   /** Forwarded to row-to-detail links so workspace context is preserved. */
   workspace?: "topside" | "marine";
-  /** Called with the equipment IDs currently passing all active filters
-   *  (search text, "Updated", "Version") whenever the filtered set
-   *  changes. Used by the parent page so the Excel-export button can
-   *  download exactly what the table is showing, not the full dataset. */
-  onFilteredIdsChange?: (ids: number[]) => void;
 }) {
   const { mutate } = useSWRConfig();
-  const [globalFilter, setGlobalFilter] = React.useState("");
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: "client_tag", desc: false },
   ]);
-  const [updatedSince, setUpdatedSince] = React.useState<UpdatedSince>("any");
-  const [minVer, setMinVer] = React.useState<number>(1); // 1 = "Any version"
 
   // ---- Per-row delete state ----
   const [pendingDelete, setPendingDelete] = React.useState<Equipment | null>(null);
@@ -229,16 +209,6 @@ export function EquipmentTable({
     }
   }
 
-  // Version threshold options are derived from the actual data — so if your
-  // project's max version is 7, you get v2+ through v7+ here.
-  const versionOptions = React.useMemo(() => buildVersionOptions(rows), [rows]);
-
-  // If a sync raises the max version above the current selection, keep it;
-  // if the data shrinks (less likely), clamp back to "Any".
-  React.useEffect(() => {
-    if (!versionOptions.some((o) => o.value === minVer)) setMinVer(1);
-  }, [versionOptions, minVer]);
-
   // Visibility state — keyed by column id. Defaults from FIELD_COLUMNS.
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>(
     () => {
@@ -253,19 +223,55 @@ export function EquipmentTable({
     },
   );
 
-  // ---- Pre-filter rows by "updated since" + "min version" ----
-  const visibleRows = React.useMemo(() => {
-    return rows.filter((r) => {
-      if ((r.current_version ?? 1) < minVer) return false;
-      if (!withinWindow(r.updated_at, updatedSince)) return false;
-      return true;
-    });
-  }, [rows, updatedSince, minVer]);
 
-  const updatedRecentlyCount = React.useMemo(
-    () => rows.filter((r) => withinWindow(r.updated_at, "7d") && (r.current_version ?? 1) >= 2).length,
-    [rows],
+  // ---- Auto-discovered columns ----
+  // Future-proofing: if the backend starts returning a field that isn't in
+  // FIELD_COLUMNS yet (e.g. a newly added tracked field on the Equipment
+  // model), it shows up here automatically — hidden by default, toggle-on
+  // via the Columns menu — with NO EquipmentTable.tsx edit required. This
+  // only catches fields already present on the API response object; adding
+  // a genuinely new column still requires the backend model/schema change,
+  // but the frontend no longer needs a matching manual column entry too.
+  const knownKeys = React.useMemo(
+    () => new Set<string>([...NON_DATA_KEYS, ...FIELD_COLUMNS.map((c) => c.accessor as string)]),
+    [],
   );
+  const autoCols = React.useMemo<ColumnDef<Equipment>[]>(() => {
+    const extra = new Set<string>();
+    for (const r of rows) {
+      for (const k of Object.keys(r)) {
+        if (!knownKeys.has(k)) extra.add(k);
+      }
+    }
+    return Array.from(extra).sort().map((key) => ({
+      id: key,
+      header: prettifyKey(key),
+      accessorFn: (row: Equipment) => (row as unknown as Record<string, unknown>)[key],
+      cell: ({ getValue }) => {
+        const v = getValue() as unknown;
+        if (v == null || v === "") return <span className="text-ink-300">—</span>;
+        return <span>{String(v)}</span>;
+      },
+    }));
+  }, [rows, knownKeys]);
+
+  // Newly-discovered auto columns default to hidden. Only sets entries that
+  // aren't already in the visibility map, so a user's manual toggle is
+  // never overwritten on a later render.
+  React.useEffect(() => {
+    if (!autoCols.length) return;
+    setColumnVisibility((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const c of autoCols) {
+        if (!(c.id! in next)) {
+          next[c.id!] = false;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [autoCols]);
 
   // ---- Column definitions ----
   const columns = React.useMemo<ColumnDef<Equipment>[]>(() => {
@@ -396,24 +402,21 @@ export function EquipmentTable({
       },
     ];
 
-    return [...fixedHead, ...dynamicCols, ...fixedTail];
-  }, [projectId, workspace, deleting, pendingDelete]);
+    return [...fixedHead, ...dynamicCols, ...autoCols, ...fixedTail];
+  }, [projectId, workspace, deleting, pendingDelete, autoCols]);
 
   const table = useReactTable({
-    data: visibleRows,
+    data: rows,
     columns,
-    state: { sorting, globalFilter, columnVisibility, rowSelection },
+    state: { sorting, columnVisibility, rowSelection },
     enableRowSelection: true,
     // Use equipment.id so checked state survives sort / filter changes
     getRowId: (row) => String(row.id),
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    globalFilterFn: "includesString",
   });
 
   // Selected equipment objects (derived from row selection map)
@@ -421,76 +424,14 @@ export function EquipmentTable({
     return table.getSelectedRowModel().rows.map((r) => r.original);
   }, [table, rowSelection]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Push the IDs of currently-visible rows up to the parent so the
-  // Excel-export button knows what to download. We derive from the
-  // filter inputs (rows + globalFilter + updatedSince + minVer) so the
-  // effect re-runs whenever any of those change — depending on the
-  // table instance directly would skip updates because TanStack mutates
-  // it in place rather than creating a new reference.
-  React.useEffect(() => {
-    if (!onFilteredIdsChange) return;
-    const ids = table.getFilteredRowModel().rows.map((r) => r.original.id);
-    onFilteredIdsChange(ids);
-  }, [rows, globalFilter, updatedSince, minVer, table, onFilteredIdsChange]);
-
   return (
     <div className="space-y-3">
-      {/* Filter / search bar */}
+      {/* Column visibility control — search/date/version filters now live
+          in the parent page (they drive server-side pagination). */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-          <input
-            className="input pl-8"
-            placeholder="Filter by tag, description, module…"
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-          />
-        </div>
-
-        <label className="flex items-center gap-1.5 text-xs text-ink-600">
-          Updated:
-          <select
-            className="input h-8 px-2 py-0 text-xs"
-            value={updatedSince}
-            onChange={(e) => setUpdatedSince(e.target.value as UpdatedSince)}
-          >
-            {(Object.keys(UPDATED_LABEL) as UpdatedSince[]).map((k) => (
-              <option key={k} value={k}>{UPDATED_LABEL[k]}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex items-center gap-1.5 text-xs text-ink-600">
-          Version:
-          <select
-            className="input h-8 px-2 py-0 text-xs"
-            value={minVer}
-            onChange={(e) => setMinVer(Number(e.target.value))}
-            disabled={versionOptions.length <= 1}
-            title={
-              versionOptions.length <= 1
-                ? "Nothing has been updated yet — every row is still on v1"
-                : undefined
-            }
-          >
-            {versionOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </label>
-
         <ColumnsMenu table={table} />
-
         <div className="ml-auto text-xs text-ink-500">
-          {table.getFilteredRowModel().rows.length} of {rows.length} rows
-          {updatedRecentlyCount > 0 && (
-            <>
-              {" · "}
-              <span className="text-amber-700">
-                {updatedRecentlyCount} updated in last 7d
-              </span>
-            </>
-          )}
+          {rows.length} row{rows.length === 1 ? "" : "s"} on this page
         </div>
       </div>
 
@@ -564,7 +505,7 @@ export function EquipmentTable({
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => {
-              const recently = withinWindow(row.original.updated_at, "24h")
+              const recently = within24h(row.original.updated_at)
                 && (row.original.current_version ?? 1) >= 2;
               return (
                 <tr
@@ -725,7 +666,10 @@ function ColumnsMenu({ table }: { table: ReturnType<typeof useReactTable<Equipme
               <button
                 className="rounded px-1.5 py-0.5 text-[10px] text-ink-500 hover:bg-ink-100"
                 onClick={() => {
-                  // Reset to defaults (defined in FIELD_COLUMNS + fixed cols).
+                  // Reset to defaults (FIELD_COLUMNS + fixed cols). Any
+                  // column not explicitly listed — including auto-
+                  // discovered ones from a newly added backend field —
+                  // defaults to hidden via getAllLeafColumns().
                   table.setColumnVisibility(() => {
                     const v: VisibilityState = {
                       client_tag: true,
@@ -734,6 +678,9 @@ function ColumnsMenu({ table }: { table: ReturnType<typeof useReactTable<Equipme
                       actions: true,
                     };
                     for (const c of FIELD_COLUMNS) v[c.id] = !!c.defaultVisible;
+                    for (const c of table.getAllLeafColumns()) {
+                      if (!(c.id in v)) v[c.id] = false;
+                    }
                     return v;
                   });
                 }}

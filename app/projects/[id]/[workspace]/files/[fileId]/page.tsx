@@ -6,6 +6,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { ArrowLeft, ArrowRight, CheckCircle2, FileText, PackagePlus, Sparkles } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Field, Spinner } from "@/components/ui";
+import type { Paged } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import type { Equipment, FileExtraction, ProjectFile } from "@/lib/types";
 
@@ -31,13 +32,15 @@ export default function FileDetailPage() {
   );
 
   // Equipment list for THIS workspace — used by the "Apply vendor to ..."
-  // dropdown when a vendor sheet's mapper couldn't pin down a tag.
-  const { data: equipment } = useSWR<Equipment[]>(
+  // dropdown when a vendor sheet's mapper couldn't pin down a tag. Needs
+  // the full list for the dropdown, not one page — hence the large limit.
+  const { data: equipmentPage } = useSWR<Paged<Equipment>>(
     file?.workspace
       ? `/projects/${projectId}/equipment?limit=5000&workspace=${file.workspace}`
       : null,
     fetcher,
   );
+  const equipment = equipmentPage?.items;
 
   const [tab, setTab] = React.useState<"summary" | "text" | "tables" | "raw">("summary");
 

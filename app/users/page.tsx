@@ -4,6 +4,7 @@ import useSWR, { useSWRConfig } from "swr";
 import { Plus, UserCog } from "lucide-react";
 
 import { Badge, Card, CardHeader, ErrorBox, Field, Spinner } from "@/components/ui";
+import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { api, fetcher } from "@/lib/api";
 import { RequireAuth, useAuth } from "@/lib/auth";
 import type { User } from "@/lib/types";
@@ -32,7 +33,10 @@ function Inner() {
 }
 
 function UsersAdmin() {
-  const { data: users, error } = useSWR<User[]>("/users", fetcher);
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
+  const usersKey = `/users?${qs}`;
+  const { data: usersPage, error } = useSWR<Paged<User>>(usersKey, fetcher);
+  const users = usersPage?.items;
   const { mutate } = useSWRConfig();
 
   const [showCreate, setShowCreate] = React.useState(false);
@@ -49,14 +53,21 @@ function UsersAdmin() {
         </button>
       </div>
 
-      {showCreate && <CreateUserForm onCreated={() => { mutate("/users"); setShowCreate(false); }} />}
+      {showCreate && (
+        <CreateUserForm
+          onCreated={() => {
+            mutate((k) => typeof k === "string" && k.startsWith("/users"));
+            setShowCreate(false);
+          }}
+        />
+      )}
 
       {error && <ErrorBox error={error} />}
       {!users && !error && <Spinner />}
 
       {users && (
         <Card>
-          <CardHeader title={`${users.length} users`} />
+          <CardHeader title={`${usersPage?.total ?? users.length} users`} />
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -88,6 +99,13 @@ function UsersAdmin() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={usersPage?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onLimitChange={setLimit}
+          />
         </Card>
       )}
     </main>

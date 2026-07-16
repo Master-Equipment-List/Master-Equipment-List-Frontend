@@ -47,6 +47,30 @@ export interface ProjectMember {
   role: ProjectRole;
 }
 
+/** A sync-proposed change to an EXISTING equipment row, awaiting admin
+ *  review before anything is written. New equipment (tags not previously
+ *  in the project) still auto-creates and never appears here. */
+export interface PendingChange {
+  id: number;
+  equipment_id: number;
+  client_tag: string;
+  description: string | null;
+  workspace: "topside" | "marine";
+  source: string;
+  source_file_id: number | null;
+  source_file_name: string | null;
+  /** {"field_name": {"old": ..., "new": ...}, ...} */
+  proposed_fields: Record<string, { old: unknown; new: unknown }>;
+  status: "pending" | "approved" | "rejected";
+  /** Who triggered the sync that queued (or last replaced) this proposal. */
+  created_by_name: string | null;
+  /** Who approved or rejected it — null while still "pending". */
+  resolved_by_name: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Equipment {
   id: number;
   project_id: number;
@@ -177,6 +201,9 @@ export interface BrowseResponse {
   project_id: number;
   root_path: string | null;
   items: DriveItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface OneDriveSelection {
@@ -195,6 +222,12 @@ export interface SyncSummary {
   files_synced: number;
   files_skipped?: number;
   files_failed: number;
+  /** NOTE: existing-row updates are no longer applied immediately — these
+   *  counts now mean "proposed changes queued for admin review" (see
+   *  `pending_changes_queued` for the combined total, and the Pending
+   *  Changes page to actually review/approve them). New equipment rows
+   *  (tags not previously in the project) still auto-create and are
+   *  counted separately under `equipment_created`. */
   pfd_updates_applied: number;
   pid_updates_applied?: number;
   /** Count of PFD/Vendor updates skipped because the equipment row was
@@ -206,8 +239,15 @@ export interface SyncSummary {
    *  skip lives in `extraction.data.vendor.evidence[field]`. */
   vendor_low_confidence_skips?: number;
   vendor_updates_applied: number;
-  /** New equipment rows auto-created from PFD/Vendor/P&ID syncs (tags not
-   *  previously in the project). 0 when only existing rows were updated. */
+  /** Rows updated/created from an auto-detected Equipment List Excel file
+   *  synced via OneDrive (any .xlsx/.xlsm, not gated on folder category —
+   *  0 when the file didn't parse as an equipment list). */
+  equipment_list_updates_applied?: number;
+  /** Total existing-row proposals queued for admin review this sync,
+   *  across every source (PFD/P&ID/Vendor/Excel combined). */
+  pending_changes_queued?: number;
+  /** New equipment rows auto-created from PFD/Vendor/P&ID/Excel syncs (tags
+   *  not previously in the project). 0 when only existing rows were updated. */
   equipment_created?: number;
   errors: Array<{ item: string | null; error: string }>;
 }

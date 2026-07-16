@@ -3,12 +3,32 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
-import { Download, Loader2, Plus, Upload } from "lucide-react";
+import { Download, Loader2, Plus, Search, Upload } from "lucide-react";
 
 import { EquipmentTable } from "@/components/EquipmentTable";
+import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { Badge, ErrorBox, Spinner } from "@/components/ui";
 import { apiBase, fetcher } from "@/lib/api";
 import type { Equipment } from "@/lib/types";
+
+type UpdatedSince = "any" | "24h" | "7d" | "30d";
+const UPDATED_HOURS: Record<UpdatedSince, number | null> = {
+  any: null, "24h": 24, "7d": 24 * 7, "30d": 24 * 30,
+};
+const UPDATED_LABEL: Record<UpdatedSince, string> = {
+  any: "Any time", "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days",
+};
+
+/** Debounce a fast-changing value (the search box) so it doesn't fire a
+ *  server request on every keystroke. */
+function useDebounced<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 export default function EquipmentListPage() {
   const params = useParams();
@@ -21,28 +41,33 @@ export default function EquipmentListPage() {
   const wsRaw = Array.isArray(wsParam) ? wsParam[0] : wsParam;
   const workspace: "topside" | "marine" = wsRaw === "marine" ? "marine" : "topside";
 
-  const { data, error, isLoading } = useSWR<Equipment[]>(
-    `/projects/${id}/equipment?limit=5000&workspace=${workspace}`,
+  // ---- Server-side filters — search / updated-since / min-version all
+  // hit the API directly now (paired with pagination, these can't stay
+  // client-side over a fully-fetched dataset any more). ----
+  const [searchInput, setSearchInput] = React.useState("");
+  const search = useDebounced(searchInput, 300);
+  const [updatedSince, setUpdatedSince] = React.useState<UpdatedSince>("any");
+  const [minVer, setMinVer] = React.useState(1);
+  const { limit, offset, setLimit, setOffset, qs } = usePagination(50);
+
+  // Any filter change invalidates the current offset — start back at page 1.
+  React.useEffect(() => { setOffset(0); }, [search, updatedSince, minVer, setOffset]);
+
+  const updatedSinceHours = UPDATED_HOURS[updatedSince];
+  const filterQs = new URLSearchParams({ workspace, min_version: String(minVer) });
+  if (search) filterQs.set("q", search);
+  if (updatedSinceHours) filterQs.set("updated_since_hours", String(updatedSinceHours));
+
+  const { data: page, error, isLoading } = useSWR<Paged<Equipment>>(
+    `/projects/${id}/equipment?${filterQs.toString()}&${qs}`,
     fetcher,
   );
+  const data = page?.items;
 
-  // The IDs of rows the EquipmentTable is currently showing AFTER its
-  // filters (search text, "Updated", "Version"). Lifted up so the Excel
-  // button below downloads exactly what the table is showing, not the
-  // full unfiltered dataset.
-  const [filteredIds, setFilteredIds] = React.useState<number[]>([]);
-  // Excel-button loading + error state. The export takes 1-3s on small
-  // projects and up to ~10s on 1000-row exports, so the button needs to
-  // visibly reflect the in-flight state.
   const [exporting, setExporting] = React.useState(false);
   const [exportErr, setExportErr] = React.useState<string | null>(null);
 
-  // Treat "no filter applied" as the full set — in that case we skip
-  // sending the `ids` body so the server returns everything. This also
-  // gives the right behaviour when the table is still loading (rows
-  // undefined → filteredIds [] → don't restrict).
-  const isFiltering =
-    !!data && filteredIds.length > 0 && filteredIds.length < data.length;
+  const isFiltering = !!search || minVer > 1 || !!updatedSinceHours;
 
   async function downloadExcel() {
     setExporting(true);
@@ -58,10 +83,15 @@ export default function EquipmentListPage() {
             "Content-Type": "application/json",
             ...(access ? { Authorization: `Bearer ${access}` } : {}),
           },
-          // When the user has a filter active, send the visible row IDs
-          // so the export matches what they see. Otherwise send an
-          // empty body and the server exports the whole workspace.
-          body: JSON.stringify(isFiltering ? { ids: filteredIds } : {}),
+          // Send the ACTIVE FILTERS (not an enumerated id list — the table
+          // only ever holds one page client-side now) so the export
+          // matches everything matching the filter, across every page.
+          // Empty body when nothing's filtered exports the whole workspace.
+          body: JSON.stringify(
+            isFiltering
+              ? { q: search || null, min_version: minVer, updated_since_hours: updatedSinceHours }
+              : {},
+          ),
         },
       );
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
@@ -79,12 +109,10 @@ export default function EquipmentListPage() {
     }
   }
 
-  // Button label changes when a filter is active so the user knows
-  // they're downloading the filtered subset, not the whole list.
   const exportLabel = exporting
     ? "Exporting…"
     : isFiltering
-    ? `Excel (${filteredIds.length})`
+    ? `Excel (${page?.total ?? "…"} filtered)`
     : "Excel";
 
   return (
@@ -108,7 +136,7 @@ export default function EquipmentListPage() {
             disabled={exporting || !data}
             title={
               isFiltering
-                ? `Download the ${filteredIds.length} filtered row(s) as Excel`
+                ? `Download every row matching the current filters as Excel`
                 : "Download all equipment as Excel"
             }
           >
@@ -128,6 +156,47 @@ export default function EquipmentListPage() {
         </div>
       </div>
 
+      {/* Filter bar — search / updated-since / min-version all hit the
+          server (paired with pagination below), so results + row counts
+          always reflect the FULL matching set, not just this page. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+          <input
+            className="input pl-8"
+            placeholder="Search by tag, old tag, or description…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-ink-600">
+          Updated:
+          <select
+            className="input h-8 px-2 py-0 text-xs"
+            value={updatedSince}
+            onChange={(e) => setUpdatedSince(e.target.value as UpdatedSince)}
+          >
+            {(Object.keys(UPDATED_LABEL) as UpdatedSince[]).map((k) => (
+              <option key={k} value={k}>{UPDATED_LABEL[k]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-ink-600">
+          Version:
+          <select
+            className="input h-8 px-2 py-0 text-xs"
+            value={minVer}
+            onChange={(e) => setMinVer(Number(e.target.value))}
+          >
+            <option value={1}>Any version</option>
+            <option value={2}>v2+ (changed at least once)</option>
+            <option value={3}>v3+</option>
+            <option value={4}>v4+</option>
+            <option value={5}>v5+</option>
+          </select>
+        </label>
+      </div>
+
       {exportErr && <ErrorBox error={{ message: exportErr }} />}
 
       {isLoading && (
@@ -135,12 +204,21 @@ export default function EquipmentListPage() {
       )}
       {error && <ErrorBox error={error} />}
       {data && (
-        <EquipmentTable
-          projectId={id}
-          rows={data}
-          workspace={workspace}
-          onFilteredIdsChange={setFilteredIds}
-        />
+        <>
+          <EquipmentTable
+            projectId={id}
+            rows={data}
+            workspace={workspace}
+          />
+          <Pagination
+            total={page?.total ?? 0}
+            limit={limit}
+            offset={offset}
+            onOffsetChange={setOffset}
+            onLimitChange={setLimit}
+            className="rounded-xl border border-ink-100 bg-white shadow-card"
+          />
+        </>
       )}
     </div>
   );
