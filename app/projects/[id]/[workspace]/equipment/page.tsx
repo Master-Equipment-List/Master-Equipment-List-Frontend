@@ -1,15 +1,15 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
-import { Download, Loader2, Plus, Search, Upload } from "lucide-react";
+import { AlertTriangle, Download, ListChecks, Loader2, Plus, Search, Upload } from "lucide-react";
 
 import { EquipmentTable } from "@/components/EquipmentTable";
 import { Pagination, usePagination, type Paged } from "@/components/Pagination";
 import { Badge, ErrorBox, Spinner } from "@/components/ui";
 import { apiBase, fetcher } from "@/lib/api";
-import type { Equipment } from "@/lib/types";
+import type { Equipment, PendingChange } from "@/lib/types";
 
 type UpdatedSince = "any" | "24h" | "7d" | "30d";
 const UPDATED_HOURS: Record<UpdatedSince, number | null> = {
@@ -32,6 +32,7 @@ function useDebounced<T>(value: T, delayMs = 300): T {
 
 export default function EquipmentListPage() {
   const params = useParams();
+  const router = useRouter();
   const id = Number(Array.isArray(params?.id) ? params.id[0] : params?.id);
 
   // workspace lives in the URL PATH now (/projects/[id]/[workspace]/...).
@@ -64,10 +65,37 @@ export default function EquipmentListPage() {
   );
   const data = page?.items;
 
+  // Before letting someone export, warn if this workspace has equipment
+  // sitting in review — the Excel would reflect PRE-review values for
+  // those rows. Both counts are already used for the workspace tab
+  // badges elsewhere, so this reuses the same cheap/throttled pattern
+  // rather than adding new backend work just for this check.
+  const { data: pendingPage } = useSWR<Paged<PendingChange>>(
+    `/projects/${id}/equipment/pending?workspace=${workspace}&status=pending&limit=1`,
+    fetcher,
+  );
+  const pendingCount = pendingPage?.total ?? 0;
+
+  const { data: duplicatesPage } = useSWR<Paged<unknown>>(
+    `/projects/${id}/equipment/duplicate-audit?workspace=${workspace}&limit=1`,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 60_000 },
+  );
+  const duplicateCount = duplicatesPage?.total ?? 0;
+
+  const [showExportWarning, setShowExportWarning] = React.useState(false);
   const [exporting, setExporting] = React.useState(false);
   const [exportErr, setExportErr] = React.useState<string | null>(null);
 
   const isFiltering = !!search || minVer > 1 || !!updatedSinceHours;
+
+  function handleExportClick() {
+    if (pendingCount > 0 || duplicateCount > 0) {
+      setShowExportWarning(true);
+      return;
+    }
+    downloadExcel();
+  }
 
   async function downloadExcel() {
     setExporting(true);
@@ -132,7 +160,7 @@ export default function EquipmentListPage() {
         <div className="flex items-center gap-2">
           <button
             className="btn-secondary"
-            onClick={downloadExcel}
+            onClick={handleExportClick}
             disabled={exporting || !data}
             title={
               isFiltering
@@ -219,6 +247,73 @@ export default function EquipmentListPage() {
             className="rounded-xl border border-ink-100 bg-white shadow-card"
           />
         </>
+      )}
+
+      {showExportWarning && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-ink-900/40 p-4 backdrop-blur-[1px]"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setShowExportWarning(false); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-warning-title"
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-ink-200"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <h3 id="export-warning-title" className="text-sm font-semibold text-ink-900">
+                This Excel may be out of date
+              </h3>
+            </div>
+            <div className="space-y-2 px-5 py-4 text-sm text-ink-700">
+              <p>
+                {pendingCount > 0 && (
+                  <>
+                    <strong>{pendingCount}</strong> equipment update{pendingCount === 1 ? "" : "s"} from
+                    a recent sync {pendingCount === 1 ? "is" : "are"} still awaiting admin review
+                  </>
+                )}
+                {pendingCount > 0 && duplicateCount > 0 && " and "}
+                {duplicateCount > 0 && (
+                  <>
+                    <strong>{duplicateCount}</strong> possible duplicate{duplicateCount === 1 ? "" : "s"} {duplicateCount === 1 ? "hasn't" : "haven't"} been resolved
+                  </>
+                )}
+                {" "}for this workspace. This export won&apos;t include whatever those reviews would change.
+              </p>
+              <p>
+                Please check the Pending list to verify before treating this as the latest file —
+                or contact your project administrator to get the outstanding items reviewed first.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-ink-100 bg-ink-50 px-5 py-3">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setShowExportWarning(false);
+                  router.push(`/projects/${id}/${workspace}/pending`);
+                }}
+              >
+                <ListChecks className="h-4 w-4" />
+                Show Pending List
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setShowExportWarning(false);
+                  downloadExcel();
+                }}
+              >
+                <Download className="h-4 w-4" />
+                Download Anyway
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

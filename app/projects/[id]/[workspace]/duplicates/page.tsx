@@ -119,8 +119,24 @@ export default function DuplicatesPage() {
       return { ...prev, [key]: current };
     });
   }
-  function dismiss(p: DuplicatePair) {
-    setDismissed((prev) => new Set(prev).add(pairKey(p)));
+  async function dismiss(p: DuplicatePair) {
+    const key = pairKey(p);
+    setDismissed((prev) => new Set(prev).add(key));
+    try {
+      await api.post(`/projects/${id}/equipment/duplicate-audit/dismiss`, {
+        equipment_a_id: p.equipment_a.id,
+        equipment_b_id: p.equipment_b.id,
+      });
+      // Dismissal count changes the workspace tab badge and the total on
+      // this page's own pagination — refresh both rather than waiting for
+      // the next natural revalidation.
+      mutate((k) => typeof k === "string" && k.includes(`/projects/${id}/equipment/duplicate-audit`));
+    } catch (e) {
+      // The pair stays hidden locally either way — a failed dismiss just
+      // means it can reappear on a future scan, not that anything broke
+      // visibly right now. Surface it so a persistent failure isn't silent.
+      setActionError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function doMerge(p: DuplicatePair) {
